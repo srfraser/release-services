@@ -79,7 +79,7 @@ def test_is_old_task():
     old_task = {
         'status': {
             'runs': [{
-                'resolved': (datetime.utcnow() - timedelta(4)).strftime('%Y-%m-%d'),
+                'resolved': (datetime.utcnow() - timedelta(2)).strftime('%Y-%m-%d'),
             }]
         }
     }
@@ -173,6 +173,7 @@ def test_wrong_branch():
 @responses.activate
 def test_success():
     with open(os.path.join(FIXTURES_DIR, 'RS0UwZahQ_qAcdZzEb_Y9g.json')) as f:
+
         # Update resolved date
         mockup = json.load(f)
         now = datetime.now().isoformat()

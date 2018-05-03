@@ -172,15 +172,11 @@ class HookCodeCoverage(PulseHook):
     def is_old_task(self, task):
         for run in task['status']['runs']:
             run_date = self.as_utc(dateutil.parser.parse(run['resolved']))
-            if run_date < self.as_utc(datetime.utcnow() - timedelta(3)):
+            if run_date < self.as_utc(datetime.utcnow() - timedelta(1)):
                 return True
         return False
 
     def is_mozilla_central_task(self, task):
-        if 'MH_BRANCH' not in task['task']['payload']['env']:
-            logger.warn('Received groupResolved notification for a task without MH_BRANCH', task_id=task['status']['taskId'])
-            return False
-
         branch = task['task']['payload']['env']['MH_BRANCH']
 
         if branch != 'mozilla-central':
