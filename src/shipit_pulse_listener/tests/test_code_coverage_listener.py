@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 import json
 import os
-from datetime import datetime
-from datetime import timedelta
 
 import responses
 
@@ -62,39 +60,6 @@ def test_is_coverage_task():
     assert not hook.is_coverage_task(nocov_task)
 
 
-def test_is_old_task():
-    hook = HookCodeCoverage({
-      'hookId': 'shipit-staging-code-coverage'
-    })
-
-    new_task = {
-        'status': {
-            'runs': [{
-                'resolved': datetime.utcnow().strftime('%Y-%m-%d'),
-            }]
-        }
-    }
-    assert not hook.is_old_task(new_task)
-
-    old_task = {
-        'status': {
-            'runs': [{
-                'resolved': (datetime.utcnow() - timedelta(2)).strftime('%Y-%m-%d'),
-            }]
-        }
-    }
-    assert hook.is_old_task(old_task)
-
-    old_task = {
-        'status': {
-            'runs': [{
-                'resolved': '2017-07-31T19:32:04.855Z',
-            }]
-        }
-    }
-    assert hook.is_old_task(old_task)
-
-
 def test_get_build_task_in_group():
     hook = HookCodeCoverage({
       'hookId': 'shipit-staging-code-coverage'
@@ -126,7 +91,7 @@ def test_is_mozilla_central_task():
         'task': {
             'payload': {
                 'env': {
-                    'MH_BRANCH': 'mozilla-inbound',
+                    'GECKO_HEAD_REPOSITORY': 'https://hg.mozilla.org/integration/mozilla-inbound/',
                 }
             }
         }
@@ -137,7 +102,7 @@ def test_is_mozilla_central_task():
         'task': {
             'payload': {
                 'env': {
-                    'MH_BRANCH': 'try',
+                    'GECKO_HEAD_REPOSITORY': 'https://hg.mozilla.org/try',
                 }
             }
         }
@@ -148,7 +113,7 @@ def test_is_mozilla_central_task():
         'task': {
             'payload': {
                 'env': {
-                    'MH_BRANCH': 'mozilla-central',
+                    'GECKO_HEAD_REPOSITORY': 'https://hg.mozilla.org/mozilla-central',
                 }
             }
         }
@@ -189,3 +154,17 @@ def test_success():
     assert hook.parse({
         'taskGroupId': 'RS0UwZahQ_qAcdZzEb_Y9g'
     }) == {'REVISION': 'ec3dd3ee2ae4b3a63529a912816a110e925eb2d0'}
+
+
+@responses.activate
+def test_success_windows():
+    with open(os.path.join(FIXTURES_DIR, 'MibGDsa4Q7uFNzDf7EV6nw.json')) as f:
+        responses.add(responses.GET, 'https://queue.taskcluster.net/v1/task-group/MibGDsa4Q7uFNzDf7EV6nw/list?limit=200', json=json.load(f), status=200, match_querystring=True)  # noqa
+
+    hook = HookCodeCoverage({
+      'hookId': 'shipit-staging-code-coverage'
+    })
+
+    assert hook.parse({
+        'taskGroupId': 'MibGDsa4Q7uFNzDf7EV6nw'
+    }) == {'REVISION': '63519bfd42ee379f597c0357af2e712ec3cd9f50'}

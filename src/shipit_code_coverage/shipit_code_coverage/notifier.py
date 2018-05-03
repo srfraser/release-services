@@ -10,18 +10,29 @@ from shipit_code_coverage.secrets import secrets
 logger = get_logger(__name__)
 
 
-class Notifier(object):
+class ResultNotReadyException(Exception):
+    pass
 
+
+class Notifier(object):
     def __init__(self, revision, client_id, access_token):
         self.revision = revision
         self.notify_service = get_service('notify', client_id, access_token)
 
     def get_coverage_summary(self, changeset):
-        r = requests.get('https://uplift.shipit.staging.mozilla-releng.net/coverage/changeset_summary/{}'.format(changeset))
+        app_channel = secrets[secrets.APP_CHANNEL]
+        if app_channel == 'staging':
+            url = 'https://uplift.shipit.staging.mozilla-releng.net/coverage/changeset_summary/{}'
+        elif app_channel == 'production':
+            url = 'https://uplift.shipit.mozilla-releng.net/coverage/changeset_summary/{}'
+        else:
+            assert False, 'Unexpected channel: {}.'.format(app_channel)
+
+        r = requests.get(url.format(changeset))
         r.raise_for_status()
 
         if r.status_code == 202:
-            return None
+            raise ResultNotReadyException()
 
         return r.json()
 
@@ -45,8 +56,8 @@ class Notifier(object):
 
             try:
                 coverage = retry(lambda: self.get_coverage_summary(rev))
-            except requests.exceptions.HTTPError:
-                logger.warn('Failure to retrieve coverage summary', rev=rev)
+            except (requests.exceptions.HTTPError, ResultNotReadyException):
+                logger.warn('Failure to retrieve coverage summary')
                 continue
 
             if coverage is None:

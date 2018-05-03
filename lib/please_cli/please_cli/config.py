@@ -281,7 +281,23 @@ PROJECTS_CONFIG = {
                 'csp': [
                     'https://login.taskcluster.net',
                     'https://auth.taskcluster.net',
+
+                    # TODO: remove lines below when garbas restores these projects on production
+                    'https://clobberer.mozilla-releng.net',
+                    'https://tooltool.mozilla-releng.net',
+                    'https://treestatus.mozilla-releng.net',
+                    'https://mapper.mozilla-releng.net',
+                    'https://archiver.mozilla-releng.net',
                 ],
+
+                # TODO: remove all envs when garbas restores these projects on production
+                'envs': {
+                    'releng-clobberer-url': 'https://clobberer.mozilla-releng.net',
+                    'releng-tooltool-url': 'https://tooltool.mozilla-releng.net',
+                    'releng-treestatus-url': 'https://treestatus.mozilla-releng.net',
+                    'releng-mapper-url': 'https://mapper.mozilla-releng.net',
+                    'releng-archiver-url': 'https://archiver.mozilla-releng.net',
+                },
             },
         },
     },
@@ -419,6 +435,40 @@ PROJECTS_CONFIG = {
             'production': {},
         },
     },
+    'shipit-code-coverage-backend': {
+        'checks': [
+            ('Checking code quality', 'flake8'),
+            ('Running tests', 'pytest tests/'),
+        ],
+        'run': 'FLASK',
+        'run_options': {
+            'port': 8011,
+        },
+        'requires': [
+            'redis',
+        ],
+        'deploy': 'HEROKU',
+        'deploy_options': {
+            'testing': {
+                'heroku_app': 'shipit-testing-codecoverage',
+                'heroku_dyno_type': 'web',
+                'url': 'https://coverage.testing.moz.tools',
+                'dns': 'coverage.testing.moz.tools.herokudns.com',
+            },
+            'staging': {
+                'heroku_app': 'shipit-staging-codecoverage',
+                'heroku_dyno_type': 'web',
+                'url': 'https://coverage.staging.moz.tools',
+                'dns': 'coverage.staging.moz.tools.herokudns.com',
+            },
+            'production': {
+                'heroku_app': 'shipit-production-codecoverage',
+                'heroku_dyno_type': 'web',
+                'url': 'https://coverage.moz.tools',
+                'dns': 'coverage.moz.tools.herokudns.com',
+            },
+        },
+    },
     'shipit-frontend': {
         'run': 'ELM',
         'run_options': {
@@ -456,6 +506,7 @@ PROJECTS_CONFIG = {
                     'https://login.taskcluster.net',
                     'https://auth.taskcluster.net',
                     'https://bugzilla.mozilla.org',
+                    'https://uplift.shipit.staging.mozilla-releng.net',
                 ],
             },
             'production': {
@@ -469,6 +520,7 @@ PROJECTS_CONFIG = {
                     'https://login.taskcluster.net',
                     'https://auth.taskcluster.net',
                     'https://bugzilla.mozilla.org',
+                    'https://uplift.shipit.mozilla-releng.net',
                 ],
             },
         },
