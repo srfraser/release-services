@@ -16,13 +16,6 @@ class TaskclusterException(Exception):
     pass
 
 
-def get_last_task(platform):
-    r = requests.get(index_base + 'task/gecko.v2.mozilla-central.latest.firefox.{}'.format(_get_build_platform_name(platform)))
-    r.raise_for_status()
-    last_task = r.json()
-    return last_task['taskId']
-
-
 def get_task(branch, revision, platform):
     if platform == 'linux':
         # A few days after https://bugzilla.mozilla.org/show_bug.cgi?id=1457393 is fixed,
