@@ -105,6 +105,7 @@ def generate_action_task(action_name, action_task_input, actions):
     action_task_id = slugid.nice().decode('utf-8')
     context.update({
         'input': action_task_input,
+        'taskGroupId': action_task_id,
         'ownTaskId': action_task_id,
         'taskId': None,
         'task': None,
@@ -116,6 +117,4 @@ def generate_action_task(action_name, action_task_input, actions):
 
 def render_action_task(task, context, action_task_id):
     action_task = jsone.render(task, context)
-    # override ACTION_TASK_GROUP_ID, so we know the new ID in advance
-    action_task['payload']['env']['ACTION_TASK_GROUP_ID'] = action_task_id
     return action_task

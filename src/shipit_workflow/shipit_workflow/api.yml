@@ -43,6 +43,12 @@ paths:
         name: branch
         type: string
       - in: query
+        name: version
+        type: string
+      - in: query
+        name: build_number
+        type: integer
+      - in: query
         name: status
         type: array
         items:
@@ -161,6 +167,7 @@ definitions:
         example: 2006-08-14T02:34:56-06:00
       partial_updates:
         type: object
+        default: {}
 
   Phase:
     type: object

@@ -35,7 +35,6 @@ def test_get_task(LINUX_TASK_ID, LATEST_LINUX, WIN_TASK_ID, LATEST_WIN):
 @responses.activate
 def test_get_task_not_found(TASK_NOT_FOUND):
     responses.add(responses.GET, 'https://index.taskcluster.net/v1/task/gecko.v2.mozilla-central.revision.b2a9a4bb5c94de179ae7a3f52fde58c0e2897498.firefox.linux64-ccov-debug', json=TASK_NOT_FOUND, status=404)  # noqa
-    responses.add(responses.GET, 'https://index.taskcluster.net/v1/task/gecko.v2.mozilla-central.revision.b2a9a4bb5c94de179ae7a3f52fde58c0e2897498.firefox.linux64-ccov-opt', json=TASK_NOT_FOUND, status=404)  # noqa
 
     with pytest.raises(taskcluster.TaskclusterException, message='Code coverage build failed and was not indexed.'):
         taskcluster.get_task('mozilla-central', 'b2a9a4bb5c94de179ae7a3f52fde58c0e2897498', 'linux')
@@ -46,17 +45,9 @@ def test_get_task_failure(TASK_NOT_FOUND):
     err = TASK_NOT_FOUND.copy()
     err['code'] = 'RandomError'
     responses.add(responses.GET, 'https://index.taskcluster.net/v1/task/gecko.v2.mozilla-central.revision.b2a9a4bb5c94de179ae7a3f52fde58c0e2897498.firefox.linux64-ccov-debug', json=err, status=500)  # noqa
-    responses.add(responses.GET, 'https://index.taskcluster.net/v1/task/gecko.v2.mozilla-central.revision.b2a9a4bb5c94de179ae7a3f52fde58c0e2897498.firefox.linux64-ccov-opt', json=err, status=500)  # noqa
 
     with pytest.raises(taskcluster.TaskclusterException, message='Unknown TaskCluster index error.'):
         taskcluster.get_task('mozilla-central', 'b2a9a4bb5c94de179ae7a3f52fde58c0e2897498', 'linux')
-
-
-@responses.activate
-def test_get_task_opt_fallback(TASK_NOT_FOUND, LINUX_TASK_ID, LATEST_LINUX):
-    responses.add(responses.GET, 'https://index.taskcluster.net/v1/task/gecko.v2.mozilla-central.revision.b2a9a4bb5c94de179ae7a3f52fde58c0e2897498.firefox.linux64-ccov-debug', json=TASK_NOT_FOUND, status=404)  # noqa
-    responses.add(responses.GET, 'https://index.taskcluster.net/v1/task/gecko.v2.mozilla-central.revision.b2a9a4bb5c94de179ae7a3f52fde58c0e2897498.firefox.linux64-ccov-opt', json=LATEST_LINUX, status=200)  # noqa
-    assert taskcluster.get_task('mozilla-central', 'b2a9a4bb5c94de179ae7a3f52fde58c0e2897498', 'linux') == LINUX_TASK_ID
 
 
 @responses.activate
@@ -77,7 +68,7 @@ def test_is_coverage_task():
     cov_task = {
         'task': {
             'metadata': {
-                'name': 'test-linux64-ccov/opt-mochitest-1'
+                'name': 'test-linux64-ccov/debug-mochitest-1'
             }
         }
     }
@@ -86,7 +77,7 @@ def test_is_coverage_task():
     nocov_task = {
         'task': {
             'metadata': {
-                'name': 'test-linux64/opt-mochitest-1'
+                'name': 'test-linux64/debug-mochitest-1'
             }
         }
     }
@@ -113,10 +104,10 @@ def test_is_coverage_task():
 
 def test_get_chunk():
     tests = [
-        ('test-linux64-ccov/opt-mochitest-1', 'mochitest-1'),
-        ('test-linux64-ccov/opt-mochitest-e10s-7', 'mochitest-7'),
-        ('test-linux64-ccov/opt-cppunit', 'cppunit'),
-        ('test-linux64-ccov/opt-firefox-ui-functional-remote-e10s', 'firefox-ui-functional-remote'),
+        ('test-linux64-ccov/debug-mochitest-1', 'mochitest-1'),
+        ('test-linux64-ccov/debug-mochitest-e10s-7', 'mochitest-7'),
+        ('test-linux64-ccov/debug-cppunit', 'cppunit'),
+        ('test-linux64-ccov/debug-firefox-ui-functional-remote-e10s', 'firefox-ui-functional-remote'),
         ('test-windows10-64-ccov/debug-mochitest-1', 'mochitest-1'),
         ('test-windows10-64-ccov/debug-mochitest-e10s-7', 'mochitest-7'),
         ('test-windows10-64-ccov/debug-cppunit', 'cppunit'),
@@ -140,7 +131,7 @@ def test_get_suite():
 
 def test_get_platform():
     tests = [
-        ('test-linux64-ccov/opt-mochitest-1', 'linux'),
+        ('test-linux64-ccov/debug-mochitest-1', 'linux'),
         ('test-windows10-64-ccov/debug-mochitest-1', 'windows'),
     ]
 

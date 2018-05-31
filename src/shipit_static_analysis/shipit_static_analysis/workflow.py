@@ -3,6 +3,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 import itertools
 import os
 import subprocess
@@ -21,6 +23,7 @@ from shipit_static_analysis.clang.format import ClangFormat
 from shipit_static_analysis.clang.tidy import ClangTidy
 from shipit_static_analysis.config import ARTIFACT_URL
 from shipit_static_analysis.config import REPO_CENTRAL
+from shipit_static_analysis.config import Publication
 from shipit_static_analysis.config import settings
 from shipit_static_analysis.lint import MozLint
 from shipit_static_analysis.utils import build_temp_file
@@ -80,7 +83,13 @@ class Workflow(object):
             raise hglib.error.CommandError(cmd, proc.returncode, out, err)
 
         # Open new hg client
-        return hglib.open(settings.repo_dir)
+        client = hglib.open(settings.repo_dir)
+
+        # Store MC top revision after robustcheckout
+        self.top_revision = client.log('reverse(public())', limit=1)[0].node
+        logger.info('Mozilla central top revision', revision=self.top_revision)
+
+        return client
 
     def run(self, revision):
         '''
@@ -98,6 +107,7 @@ class Workflow(object):
             taskcluster_task=self.taskcluster_task_id,
             taskcluster_run=self.taskcluster_run_id,
             channel=settings.app_channel,
+            publication=settings.publication.name,
             revision=str(revision),
         )
         stats.api.event(
@@ -107,13 +117,13 @@ class Workflow(object):
         stats.api.increment('analysis')
 
         with stats.api.timer('runtime.mercurial'):
-            # Force cleanup to reset tip
+            # Force cleanup to reset top of MC
             # otherwise previous pull are there
-            self.hg.update(rev=b'tip', clean=True)
-            logger.info('Set repo back to tip', rev=self.hg.tip().node)
+            self.hg.update(rev=self.top_revision, clean=True)
+            logger.info('Set repo back to Mozilla central top', rev=self.hg.identify())
 
-            # Apply and analyze revision patch
-            revision.apply(self.hg)
+            # Load and analyze revision patch
+            revision.load(self.hg)
             revision.analyze_patch()
 
         with stats.api.timer('runtime.mach'):
@@ -152,7 +162,9 @@ class Workflow(object):
             # Setup python environment
             logger.info('Mach lint setup...')
             cmd = ['gecko-env', './mach', 'lint', '--list']
-            run_check(cmd, cwd=settings.repo_dir)
+            out = run_check(cmd, cwd=settings.repo_dir)
+            assert 'error: problem with lint setup' not in out.decode('utf-8'), \
+                'Mach lint setup failed'
 
             # Always use mozlint
             if MOZLINT in self.analyzers:
@@ -164,27 +176,55 @@ class Workflow(object):
             logger.error('No analyzers to use on revision')
             return
 
-        issues = []
-        for analyzer_class in analyzers:
-            # Build analyzer
-            logger.info('Run {}'.format(analyzer_class.__name__))
-            analyzer = analyzer_class()
+        with stats.api.timer('runtime.issues'):
+            # Detect initial issues
+            if settings.publication == Publication.BEFORE_AFTER:
+                before_patch = self.detect_issues(analyzers, revision)
+                logger.info('Detected {} issue(s) before patch'.format(len(before_patch)))
+                stats.api.increment('analysis.issues.before', len(before_patch))
 
-            # Run analyzer on version and store generated issues
-            issues += analyzer.run(revision)
+            # Apply patch
+            revision.apply(self.hg)
 
-        logger.info('Detected {} issue(s)'.format(len(issues)))
+            # Detect new issues
+            issues = self.detect_issues(analyzers, revision)
+            logger.info('Detected {} issue(s) after patch'.format(len(issues)))
+            stats.api.increment('analysis.issues.after', len(issues))
+
+            # Mark newly found issues
+            if settings.publication == Publication.BEFORE_AFTER:
+                for issue in issues:
+                    issue.is_new = issue not in before_patch
+
         if not issues:
             logger.info('No issues, stopping there.')
             return
 
-        # Build a potential improvement patch
+        # Report issues publication stats
+        stats.api.increment('analysis.issues.publishable', len([i for i in issues if i.is_publishable()]))
+
+        # Build patch to help developer improve their code
         self.build_improvement_patch(revision, issues)
 
         # Publish reports about these issues
         with stats.api.timer('runtime.reports'):
             for reporter in self.reporters.values():
                 reporter.publish(issues, revision)
+
+    def detect_issues(self, analyzers, revision):
+        '''
+        Detect issues for this revision
+        '''
+        issues = []
+        for analyzer_class in analyzers:
+            # Build analyzer
+            logger.info('Run {}'.format(analyzer_class.__name__))
+            analyzer = analyzer_class()
+
+            # Run analyzer on revision and store generated issues
+            issues += analyzer.run(revision)
+
+        return issues
 
     def build_improvement_patch(self, revision, issues):
         '''

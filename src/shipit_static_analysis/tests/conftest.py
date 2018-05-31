@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 import time
 from distutils.spawn import find_executable
+from unittest.mock import Mock
 
 import hglib
 import httpretty
@@ -19,8 +20,7 @@ import responses
 
 MOCK_DIR = os.path.join(os.path.dirname(__file__), 'mocks')
 
-TEST_CPP = '''
-include <cstdio>
+TEST_CPP = '''include <cstdio>
 
 int main(void){
     printf("Hello world!");
@@ -45,7 +45,7 @@ def mock_config():
 
     from shipit_static_analysis.config import settings
     tempdir = tempfile.mkdtemp()
-    settings.setup('test', tempdir)
+    settings.setup('test', tempdir, 'IN_PATCH')
 
     return settings
 
@@ -74,6 +74,9 @@ def mock_repository(mock_config):
     third_party = os.path.join(mock_config.repo_dir, mock_config.third_party)
     with open(third_party, 'w') as f:
         f.write('test/dummy')
+
+    # Remove pull capabilities
+    client.pull = Mock(return_value=True)
 
     return client
 

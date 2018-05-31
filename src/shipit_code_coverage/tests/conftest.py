@@ -5,14 +5,21 @@
 
 import json
 import os
+import shutil
 import tempfile
 import zipfile
 from contextlib import contextmanager
 
+import hglib
 import pytest
 import responses
 
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), 'fixtures')
+
+
+def load_file(path):
+    with open(os.path.join(FIXTURES_DIR, path)) as f:
+        return f.read()
 
 
 def load_json(path):
@@ -180,3 +187,59 @@ def codecov_commits():
                 json=data,
                 status=status
             )
+
+
+@pytest.fixture()
+def fake_hg_repo(tmpdir):
+
+    def tobytes(x):
+        return bytes(x, 'ascii')
+
+    tmp_path = tmpdir.strpath
+    dest = os.path.join(tmp_path, 'repos')
+    local = os.path.join(dest, 'local')
+    remote = os.path.join(dest, 'remote')
+    for d in [local, remote]:
+        os.makedirs(d)
+        hglib.init(d)
+
+    os.environ['USER'] = 'app'
+    oldcwd = os.getcwd()
+    os.chdir(local)
+    hg = hglib.open(local)
+
+    files = [
+        {'name': 'mozglue/build/dummy.cpp',
+         'size': 1},
+        {'name': 'toolkit/components/osfile/osfile.jsm',
+         'size': 2},
+        {'name': 'js/src/jit/JIT.cpp',
+         'size': 3},
+        {'name': 'toolkit/components/osfile/osfile-win.jsm',
+         'size': 4},
+        {'name': 'js/src/jit/BitSet.cpp',
+         'size': 5},
+        {'name': 'shipit_code_coverage/cli.py',
+         'size': 6},
+    ]
+
+    for c in '?!':
+        for f in files:
+            fname = f['name']
+            parent = os.path.dirname(fname)
+            if not os.path.exists(parent):
+                os.makedirs(parent)
+            with open(fname, 'w') as Out:
+                Out.write(c * f['size'])
+            hg.add(files=[tobytes(fname)])
+            hg.commit(message='Commit file {} with {} inside'.format(fname, c),
+                      user='Moz Illa <milla@mozilla.org>')
+            hg.push(dest=tobytes(remote))
+
+    hg.close()
+    os.chdir(oldcwd)
+
+    shutil.copyfile(os.path.join(remote, '.hg/pushlog2.db'),
+                    os.path.join(local, '.hg/pushlog2.db'))
+
+    return local

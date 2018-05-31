@@ -15,7 +15,7 @@ let
 
   # Marco grcov
   grcov = rustPlatform.buildRustPackage rec {
-    version = "0.1.33";
+    version = "0.1.37";
     name = "grcov-${version}";
 
     buildInputs = [
@@ -26,7 +26,7 @@ let
       owner = "marco-c";
       repo = "grcov";
       rev = "v${version}";
-      sha256 = "00lyyrb4w4r2hfgii89w5r1cs86kx5p9xvw5rqcfm9gjjp04nvhy";
+      sha256 = "1mbv3j7j35pcsi0pfy8fnqhqcip8l52ybciai9d2052glg7xa4v6";
     };
 
 	# ...
@@ -36,7 +36,7 @@ let
     # error: test failed, to rerun pass '--test test'
     doCheck = false;
 
-    cargoSha256 = "0wqsg8cg403vc6f7gikf0rzm9ywbp29fxpmb4kaa1pybq9v9v00s";
+    cargoSha256 = "0wp26nw7kgysfk94hzm3dj8m0xj2wzzkah5lvv038chqmr6xvzjv";
 
     meta = with releng_pkgs.pkgs.stdenv.lib; {
       description = "grcov collects and aggregates code coverage information for multiple source files.";
@@ -106,6 +106,7 @@ let
     version = fileContents ./VERSION;
     src = filterSource ./. { inherit name; };
     buildInputs =
+      [ mercurial ] ++
       (fromRequirementsFile ./../../lib/cli_common/requirements-dev.txt python.packages) ++
       (fromRequirementsFile ./requirements-dev.txt python.packages);
     propagatedBuildInputs =

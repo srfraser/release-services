@@ -12,10 +12,7 @@ import taskcluster
 from sqlalchemy.orm.exc import NoResultFound
 from werkzeug.exceptions import BadRequest
 
-from backend_common.auth0 import AuthError
-from backend_common.auth0 import has_scopes
 from backend_common.auth0 import mozilla_accept_token
-from backend_common.auth0 import requires_auth
 from cli_common.log import get_logger
 from shipit_workflow.models import Phase
 from shipit_workflow.models import Release
@@ -57,15 +54,10 @@ def validate_user(key, checker):
     return wrapper
 
 
-@requires_auth
+@mozilla_accept_token()
+@validate_user(key='https://sso.mozilla.com/claim/groups',
+               checker=lambda xs: 'releng' in xs)
 def add_release(body):
-    required_scopes = ['{product}:{branch}:create'.format(product=body['product'], branch=body['branch'])]
-    scopes = flask.g.userinfo['scope'].split()
-    if not has_scopes(scopes, required_scopes):
-        raise AuthError({
-            'code': 'invalid_scopes',
-            'description': 'Invalid scopes. Verify that you have the following scopes {}'.format(required_scopes)},
-            401)
     session = flask.g.db.session
     r = Release(
         product=body['product'],
@@ -89,13 +81,21 @@ def add_release(body):
         raise BadRequest(description=e.description)
 
 
-def list_releases(product=None, branch=None, status=['scheduled']):
+def list_releases(product=None, branch=None, version=None, build_number=None,
+                  status=['scheduled']):
     session = flask.g.db.session
     releases = session.query(Release)
     if product:
         releases = releases.filter(Release.product == product)
     if branch:
         releases = releases.filter(Release.branch == branch)
+    if version:
+        releases = releases.filter(Release.version == version)
+        if build_number:
+            releases = releases.filter(Release.build_number == build_number)
+    elif build_number:
+        raise BadRequest(description='Filtering by build_number without version'
+                         ' is not supported.')
     releases = releases.filter(Release.status.in_(status))
     return [r.json for r in releases.all()]
 
@@ -162,10 +162,11 @@ def abandon_release(name):
                 action_task_input={},
                 actions=actions,
             )
-            # existing_tasks contains a lot of entries, so we hit the payload
+            # some parameters contain a lot of entries, so we hit the payload
             # size limit. We don't use this parameter in any case, safe to
             # remove
-            context['parameters']['existing_tasks'] = {}
+            for long_param in ('existing_tasks', 'release_history', 'release_partner_config'):
+                del context['parameters'][long_param]
             # ACTION_TASK_ID should be explicitly specified and be the original
             # action task that generated this phase.
             action_task = render_action_task(task=action_task, context=context,

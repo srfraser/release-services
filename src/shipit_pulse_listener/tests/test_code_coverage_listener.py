@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import json
 import os
-from datetime import datetime
 
 import responses
 
@@ -139,14 +138,7 @@ def test_wrong_branch():
 @responses.activate
 def test_success():
     with open(os.path.join(FIXTURES_DIR, 'RS0UwZahQ_qAcdZzEb_Y9g.json')) as f:
-
-        # Update resolved date
-        mockup = json.load(f)
-        now = datetime.now().isoformat()
-        for i, task in enumerate(mockup['tasks']):
-            mockup['tasks'][i]['status']['runs'][0]['resolved'] = now
-
-        responses.add(responses.GET, 'https://queue.taskcluster.net/v1/task-group/RS0UwZahQ_qAcdZzEb_Y9g/list?limit=200', json=mockup, status=200, match_querystring=True)  # noqa
+        responses.add(responses.GET, 'https://queue.taskcluster.net/v1/task-group/RS0UwZahQ_qAcdZzEb_Y9g/list?limit=200', json=json.load(f), status=200, match_querystring=True)  # noqa
 
     hook = HookCodeCoverage({
       'hookId': 'shipit-staging-code-coverage'
