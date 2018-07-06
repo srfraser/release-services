@@ -6,7 +6,6 @@ from __future__ import absolute_import
 
 import datetime
 import json
-import os
 
 import slugid
 
@@ -36,10 +35,25 @@ def get_build_task(index,
         '--taskcluster-secret=' + taskcluster_secret,
         '--no-interactive',
     ]
+
+    nix_path_attributes = [project]
+    deployments = please_cli.config.PROJECTS_CONFIG[project]['deploys']
+    for deployment in deployments:
+        for channel in deployment['options']:
+            if 'nix_path_attribute' in deployment['options'][channel]:
+                nix_path_attributes.append('{}.{}'.format(
+                    project,
+                    deployment['options'][channel]['nix_path_attribute'],
+                ))
+    nix_path_attributes = list(set(nix_path_attributes))
+
+    for nix_path_attribute in nix_path_attributes:
+        command.append('--nix-path-attribute={}'.format(nix_path_attribute))
+
     if cache_bucket and cache_region:
         command += [
-            '--cache-bucket="{}"'.format(cache_bucket),
-            '--cache-region="{}"'.format(cache_region),
+            '--cache-bucket={}'.format(cache_bucket),
+            '--cache-region={}'.format(cache_region),
         ]
     return get_task(
         task_group_id,
@@ -77,9 +91,11 @@ def get_deploy_task(index,
 
     scopes = []
 
-    nix_path_attribute = deploy_options.get('nix_path_attribute', '')
+    nix_path_attribute = deploy_options.get('nix_path_attribute')
     if nix_path_attribute:
-        nix_path_attribute = ' ({})'.format(nix_path_attribute)
+        nix_path_attribute = '{}.{}'.format(project, nix_path_attribute)
+    else:
+        nix_path_attribute = project
 
     if deploy_target == 'S3':
         project_csp = []
@@ -87,10 +103,15 @@ def get_deploy_task(index,
             project_csp.append('--csp="{}"'.format(url))
         for require in project_requires:
             require_config = please_cli.config.PROJECTS_CONFIG.get(require, {})
-            require_deploy_options = require_config.get('deploy_options', {}).get(channel, {})
-            require_url = require_deploy_options.get('url')
-            if require_url:
-                project_csp.append('--csp="{}"'.format(require_url))
+
+            require_urls = [
+                i.get('options', {}).get(channel, {}).get('url')
+                for i in require_config.get('deploys', [])
+            ]
+            require_urls = filter(lambda x: x is not None, require_urls)
+            require_urls = map(lambda x: '--csp="{}"'.format(x), require_urls)
+
+            project_csp += require_urls
 
         project_envs = []
         project_envs.append('--env="release-version: {}"'.format(please_cli.config.VERSION))
@@ -99,14 +120,22 @@ def get_deploy_task(index,
             project_envs.append('--env="{}: {}"'.format(env_name, env_value))
         for require in project_requires:
             require_config = please_cli.config.PROJECTS_CONFIG.get(require, {})
-            require_deploy_options = require_config.get('deploy_options', {}).get(channel, {})
-            require_url = require_deploy_options.get('url')
-            if require_url:
-                project_envs.append('--env="{}-url: {}"'.format(require, require_url))
+
+            require_urls = [
+                (
+                    i.get('options', {}).get(channel, {}).get('url'),
+                    i.get('options', {}).get(channel, {}).get('name-suffix', ''),
+                )
+                for i in require_config.get('deploys', [])
+            ]
+            require_urls = filter(lambda x: x[0] is not None, require_urls)
+            require_urls = map(lambda x: '--env="{}{}-url: {}"'.format(require, x[1], x[0]), require_urls)
+
+            project_envs += require_urls
 
         project_name = '{}{} to AWS S3 ({})'.format(
             project,
-            nix_path_attribute,
+            ' ({})'.format(nix_path_attribute),
             deploy_options['s3_bucket'],
         )
         command = [
@@ -115,14 +144,14 @@ def get_deploy_task(index,
             project,
             '--s3-bucket=' + deploy_options['s3_bucket'],
             '--taskcluster-secret=repo:github.com/mozilla-releng/services:branch:' + channel,
-            '--channel=' + channel,
+            '--nix-path-attribute=' + nix_path_attribute,
             '--no-interactive',
         ] + project_csp + project_envs
 
     elif deploy_target == 'HEROKU':
         project_name = '{}{} to HEROKU ({}/{})'.format(
             project,
-            nix_path_attribute,
+            ' ({})'.format(nix_path_attribute),
             deploy_options['heroku_app'],
             deploy_options['heroku_dyno_type'],
         )
@@ -132,17 +161,48 @@ def get_deploy_task(index,
             project,
             '--heroku-app=' + deploy_options['heroku_app'],
             '--heroku-dyno-type=' + deploy_options['heroku_dyno_type'],
+        ]
+
+        heroku_command = deploy_options.get('heroku_command')
+        if heroku_command:
+            command.append('--heroku-command="{}"'.format(heroku_command))
+
+        command += [
             '--taskcluster-secret=repo:github.com/mozilla-releng/services:branch:' + channel,
-            '--channel=' + channel,
+            '--nix-path-attribute=' + nix_path_attribute,
+            '--no-interactive',
+        ]
+
+    elif deploy_target == 'DOCKERHUB':
+        docker_repo = please_cli.config.DOCKER_REPO
+        project_name = (
+            '{project} ({nix_path_attribute}) to DOCKERHUB '
+            '({docker_repo}:{project}-{nix_path_attribute}-{channel})'.format(
+                project=project,
+                nix_path_attribute=nix_path_attribute,
+                docker_repo=docker_repo,
+                channel=channel,
+            )
+        )
+        command = [
+            './please', '-vv', 'tools', 'deploy:DOCKERHUB', project,
+            '--taskcluster-secret=repo:github.com/mozilla-releng/services:branch:{}'.format(channel),
+            '--nix-path-attribute={}'.format(nix_path_attribute),
+            '--docker-repo={}'.format(docker_repo),
+            '--channel={}'.format(channel),
             '--no-interactive',
         ]
 
     elif deploy_target == 'TASKCLUSTER_HOOK':
         hook_group_id = 'project-releng'
-        hook_id = 'services-{}-{}'.format(channel, project)
+        hook_id = 'services-{}-{}{}'.format(
+            channel,
+            project,
+            deploy_options.get('name-suffix', ''),
+        )
         project_name = '{}{} to TASKCLUSTER HOOK ({}/{})'.format(
             project,
-            nix_path_attribute,
+            ' ({})'.format(nix_path_attribute),
             hook_group_id,
             hook_id,
         )
@@ -153,7 +213,7 @@ def get_deploy_task(index,
             '--hook-group-id={}'.format(hook_group_id),
             '--hook-id={}'.format(hook_id),
             '--taskcluster-secret=repo:github.com/mozilla-releng/services:branch:' + channel,
-            '--channel=' + channel,
+            '--nix-path-attribute=' + nix_path_attribute,
             '--no-interactive',
         ]
         scopes += [
@@ -358,7 +418,7 @@ def cmd(ctx,
         deployed_projects = {}
 
         for project_name in sorted(PROJECTS):
-            deployed_project = deployed_projects.get(project_name)
+            deployed_projects.get(project_name)
 
             if deployed_projects == project_hashes[project_name]:
                 continue

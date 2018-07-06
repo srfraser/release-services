@@ -18,6 +18,9 @@ from shipit_static_analysis.revisions import Revision
 logger = get_logger(__name__)
 
 REGEX_HEADER = re.compile(r'^(.+):(\d+):(\d+): (warning|error|note): ([^\[\]\n]+)(?: \[([\.\w-]+)\])?$', re.MULTILINE)
+REGEX_FOOTER = re.compile(r'^(Warning: [\.\w-]+ in .+:)|(Suppressed \d+ warnings)|(\d+ warnings? and \d+ errors? generated.)|(Error while processing)', re.MULTILINE)  # noqa
+REGEX_HAS_WARNINGS = re.compile(r'^(\d+) warnings|errors present.$', re.MULTILINE)
+
 
 ISSUE_MARKDOWN = '''
 ## clang-tidy {type}
@@ -119,17 +122,38 @@ class ClangTidy(object):
         '''
         Parse clang-tidy output into structured issues
         '''
-
-        # Limit clang output parsing to 'Enabled checks:'
-        end = re.search(r'^Enabled checks:\n', clang_output, re.MULTILINE)
-        if end is not None:
-            clang_output = clang_output[:end.start()-1]
+        # Detect end of file warnings count
+        # When an invalid file is used, this line does not appear
+        has_warnings = REGEX_HAS_WARNINGS.search(clang_output)
+        if has_warnings is None:
+            logger.info('Empty clang output, skipping analysis.')
+            return []
+        nb_warnings = int(has_warnings.group(1))
+        if nb_warnings == 0:
+            logger.info('Mach static analysis did not find any issue')
+            return []
+        logger.info('Mach static analysis found some issues', nb=nb_warnings)
 
         # Sort headers by positions
         headers = sorted(
             REGEX_HEADER.finditer(clang_output),
             key=lambda h: h.start()
         )
+        if not headers:
+            raise Exception('No clang-tidy header was found even though a clang output was provided')
+
+        def _remove_footer(start_pos, end_pos):
+            '''
+            Build an issue body from clang-tidy output
+            and stops when an extra paylaod is detected (footer)
+            '''
+            assert isinstance(start_pos, int)
+            assert isinstance(end_pos, int)
+            body = clang_output[start_pos:end_pos]
+            footer = REGEX_FOOTER.search(body)
+            if footer is None:
+                return body
+            return body[:footer.start()-1]
 
         issues = []
         for i, header in enumerate(headers):
@@ -137,10 +161,12 @@ class ClangTidy(object):
 
             # Get next header
             if i+1 < len(headers):
+                # Parse body until next header
                 next_header = headers[i+1]
-                issue.body = clang_output[header.end():next_header.start() - 1]
+                issue.body = _remove_footer(header.end(), next_header.start() - 1)
             else:
-                issue.body = clang_output[header.end():]
+                # Limit last element to 3 lines to avoid parsing extra metadatas
+                issue.body = _remove_footer(header.end(), header.end() + 3)
 
             if issue.is_problem():
                 # Save problem to append notes
@@ -255,16 +281,17 @@ class ClangTidyIssue(Issue):
         '''
         Build the text body published on reporters
         '''
+        message = self.message
+        if len(message) > 0:
+            message = message[0].capitalize() + message[1:]
         body = '{}: {} [clang-tidy: {}]'.format(
             self.type.capitalize(),
-            self.message.capitalize(),
+            message,
             self.check,
         )
 
-        # Add body when it's more than 2 lines
-        # it generally contains useful info
-        lines = len(list(filter(None, self.body.split('\n'))))
-        if lines > 2:
+        # Always add body as it's been cleaned up
+        if self.body:
             body += '\n{}'.format(self.body)
 
         return body
@@ -276,7 +303,7 @@ class ClangTidyIssue(Issue):
             location='{}:{}:{}'.format(self.path, self.line, self.char),
             body=self.body,
             check=self.check,
-            in_patch='yes' if self.in_patch() else 'no',
+            in_patch='yes' if self.revision.contains(self) else 'no',
             third_party='yes' if self.is_third_party() else 'no',
             publishable_check='yes' if self.has_publishable_check() else 'no',
             publishable='yes' if self.is_publishable() else 'no',
@@ -295,3 +322,29 @@ class ClangTidyIssue(Issue):
         '''
         No diff available
         '''
+
+    def as_dict(self):
+        '''
+        Outputs all available information into a serializable dict
+        '''
+        return {
+            'analyzer': 'clang-tidy',
+            'path': self.path,
+            'line': self.line,
+            'nb_lines': self.nb_lines,
+            'char': self.char,
+            'check': self.check,
+            'type': self.type,
+            'message': self.message,
+            'body': self.body,
+            'notes': [note.as_dict() for note in self.notes],
+            'validation': {
+                'publishable_check': self.has_publishable_check(),
+                'third_party': self.is_third_party(),
+                'is_expanded_macro': self.is_expanded_macro(),
+            },
+            'in_patch': self.revision.contains(self),
+            'is_new': self.is_new,
+            'validates': self.validates(),
+            'publishable': self.is_publishable(),
+        }

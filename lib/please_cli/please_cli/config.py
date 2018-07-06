@@ -156,93 +156,6 @@ PROJECTS_CONFIG = {
             },
         ],
     },
-    'releng-archiver': {
-        'checks': [
-            ('Checking code quality', 'flake8'),
-            ('Running tests', 'pytest tests/'),
-        ],
-        'run': 'FLASK',
-        'run_options': {
-            'port': 8005,
-        },
-        'requires': [
-            'postgresql',
-        ],
-        'deploys': [
-            {
-                'target': 'HEROKU',
-                'options': {
-                    'testing': {
-                        'nix_path_attribute': 'docker',
-                        'heroku_app': 'releng-testing-archiver',
-                        'heroku_dyno_type': 'web',
-                        'url': 'https://archiver.testing.mozilla-releng.net',
-                        # TODO: switch to SSL Endpoint
-                        'dns': 'archiver.testing.mozilla-releng.net.herokudns.com',
-                    },
-                    'staging': {
-                        'nix_path_attribute': 'docker',
-                        'heroku_app': 'releng-staging-archiver',
-                        'heroku_dyno_type': 'web',
-                        'url': 'https://archiver.staging.mozilla-releng.net',
-                        # TODO: switch to SSL Endpoint
-                        'dns': 'archiver.staging.mozilla-releng.net.herokudns.com',
-                    },
-                    # 'production': {
-                    #     'nix_path_attribute': 'docker',
-                    #     'heroku_app': 'releng-production-archiver',
-                    #     'heroku_dyno_type': 'web',
-                    #     'url': 'https://archiver.mozilla-releng.net',
-                    #     # TODO: switch to SSL Endpoint
-                    #     'dns': 'archiver.mozilla-releng.net.herokudns.com',
-                    # },
-                },
-            },
-        ],
-    },
-    'releng-clobberer': {
-        'checks': [
-            ('Checking code quality', 'flake8'),
-            ('Running tests', 'pytest tests/'),
-        ],
-        'run': 'FLASK',
-        'run_options': {
-            'port': 8001,
-        },
-        'requires': [
-            'postgresql',
-        ],
-        'deploys': [
-            {
-                'target': 'HEROKU',
-                'options': {
-                    'testing': {
-                        'nix_path_attribute': 'docker',
-                        'heroku_app': 'releng-testing-clobberer',
-                        'heroku_dyno_type': 'web',
-                        'url': 'https://clobberer.testing.mozilla-releng.net',
-                        # TODO: do testing and production have the same dns?
-                        'dns': 'saitama-70467.herokussl.com',
-                    },
-                    'staging': {
-                        'nix_path_attribute': 'docker',
-                        'heroku_app': 'releng-staging-clobberer',
-                        'heroku_dyno_type': 'web',
-                        'url': 'https://clobberer.staging.mozilla-releng.net',
-                        # TODO: do staging and production have the same dns?
-                        'dns': 'saitama-70467.herokussl.com',
-                    },
-                    # 'production': {
-                    #     'nix_path_attribute': 'docker',
-                    #     'heroku_app': 'releng-production-clobberer',
-                    #     'heroku_dyno_type': 'web',
-                    #     'url': 'https://clobberer.mozilla-releng.net',
-                    #     'dns': 'saitama-70467.herokussl.com',
-                    # },
-                },
-            },
-        ],
-    },
     'releng-docs': {
         'run': 'SPHINX',
         'run_options': {
@@ -275,15 +188,14 @@ PROJECTS_CONFIG = {
     'releng-frontend': {
         'run': 'ELM',
         'run_options': {
-            'port': 8000,
+            'port': 8010,
         },
         'requires': [
             'releng-docs',
-            'releng-clobberer',
             'releng-tooltool',
+            'releng-tokens',
             'releng-treestatus',
             'releng-mapper',
-            'releng-archiver',
             'releng-notification-policy',
             'releng-notification-identity',
         ],
@@ -344,7 +256,6 @@ PROJECTS_CONFIG = {
                         'heroku_app': 'releng-testing-mapper',
                         'heroku_dyno_type': 'web',
                         'url': 'https://mapper.testing.mozilla-releng.net',
-                        # TODO: switch to SSL Endpoint
                         'dns': 'mapper.testing.mozilla-releng.net.herokudns.com',
                     },
                     'staging': {
@@ -352,17 +263,56 @@ PROJECTS_CONFIG = {
                         'heroku_app': 'releng-staging-mapper',
                         'heroku_dyno_type': 'web',
                         'url': 'https://mapper.staging.mozilla-releng.net',
-                        # TODO: switch to SSL Endpoint
                         'dns': 'mapper.staging.mozilla-releng.net.herokudns.com',
                     },
-                    # 'production': {
-                    #     'nix_path_attribute': 'docker',
-                    #     'heroku_app': 'releng-production-mapper',
-                    #     'heroku_dyno_type': 'web',
-                    #      # TODO: switch to SSL Endpoint
-                    #     'url': 'https://mapper.mozilla-releng.net',
-                    #     'dns': 'mapper.mozilla-releng.net.herokudns.com',
-                    # },
+                    'production': {
+                        'nix_path_attribute': 'docker',
+                        'heroku_app': 'releng-production-mapper',
+                        'heroku_dyno_type': 'web',
+                        'url': 'https://mapper.mozilla-releng.net',
+                        'dns': 'mapper.mozilla-releng.net.herokudns.com',
+                    },
+                },
+            },
+        ],
+    },
+    'releng-tokens': {
+        'checks': [
+            ('Checking code quality', 'flake8'),
+            ('Running tests', 'pytest tests/'),
+        ],
+        'run': 'FLASK',
+        'run_options': {
+            'port': 8003,
+        },
+        'requires': [
+            'postgresql',
+        ],
+        'deploys': [
+            {
+                'target': 'HEROKU',
+                'options': {
+                    'testing': {
+                        'nix_path_attribute': 'docker',
+                        'heroku_app': 'releng-testing-tokens',
+                        'heroku_dyno_type': 'web',
+                        'url': 'https://tokens.testing.mozilla-releng.net',
+                        'dns': 'tokens.testing.mozilla-releng.net.herokudns.com',
+                    },
+                    'staging': {
+                        'nix_path_attribute': 'docker',
+                        'heroku_app': 'releng-staging-tokens',
+                        'heroku_dyno_type': 'web',
+                        'url': 'https://tokens.staging.mozilla-releng.net',
+                        'dns': 'tokens.staging.mozilla-releng.net.herokudns.com',
+                    },
+                    'production': {
+                        'nix_path_attribute': 'docker',
+                        'heroku_app': 'releng-production-tokens',
+                        'heroku_dyno_type': 'web',
+                        'url': 'https://tokens.mozilla-releng.net',
+                        'dns': 'tokens.mozilla-releng.net.herokudns.com',
+                    },
                 },
             },
         ],
@@ -406,6 +356,63 @@ PROJECTS_CONFIG = {
                     },
                 },
             },
+            {
+                'target': 'HEROKU',
+                'options': {
+                    'testing': {
+                        'nix_path_attribute': 'docker',
+                        'heroku_app': 'releng-testing-tooltool',
+                        'heroku_dyno_type': 'worker',
+                        'heroku_command': '/bin/flask worker',
+                    },
+                    'staging': {
+                        'nix_path_attribute': 'docker',
+                        'heroku_app': 'releng-staging-tooltool',
+                        'heroku_dyno_type': 'worker',
+                        'heroku_command': '/bin/flask worker',
+                    },
+                    'production': {
+                        'nix_path_attribute': 'docker',
+                        'heroku_app': 'releng-production-tooltool',
+                        'heroku_dyno_type': 'worker',
+                        'heroku_command': '/bin/flask worker',
+                    },
+                },
+            },
+            {
+                'target': 'TASKCLUSTER_HOOK',
+                'options': {
+                    'testing': {
+                        'nix_path_attribute': 'cron.replicate.testing',
+                        'name-suffix': '-replicate',
+                    },
+                    'staging': {
+                        'nix_path_attribute': 'cron.replicate.staging',
+                        'name-suffix': '-replicate',
+                    },
+                    'production': {
+                        'nix_path_attribute': 'cron.replicate.production',
+                        'name-suffix': '-replicate',
+                    },
+                },
+            },
+            {
+                'target': 'TASKCLUSTER_HOOK',
+                'options': {
+                    'testing': {
+                        'nix_path_attribute': 'cron.check_pending_uploads.testing',
+                        'name-suffix': '-check_pending_uploads',
+                    },
+                    'staging': {
+                        'nix_path_attribute': 'cron.check_pending_uploads.staging',
+                        'name-suffix': '-check_pending_uploads',
+                    },
+                    'production': {
+                        'nix_path_attribute': 'cron.check_pending_uploads.production',
+                        'name-suffix': '-check_pending_uploads',
+                    },
+                },
+            },
         ],
     },
     'releng-treestatus': {
@@ -415,7 +422,7 @@ PROJECTS_CONFIG = {
         ],
         'run': 'FLASK',
         'run_options': {
-            'port': 8010,
+            'port': 8000,
         },
         'requires': [
             'postgresql',
@@ -438,7 +445,7 @@ PROJECTS_CONFIG = {
                         'heroku_dyno_type': 'web',
                         'url': 'https://treestatus.staging.mozilla-releng.net',
                         # TODO: we need to change this to SSL Endpoint
-                        'dns': 'treestatus.staging.mozilla-releng.net.herokudns.com',
+                        'dns': 'nagasaki-25852.herokussl.com',
                     },
                     'production': {
                         'nix_path_attribute': 'docker',
@@ -848,6 +855,17 @@ PROJECTS_CONFIG = {
                         'url': 'https://shipit-workflow.staging.mozilla-releng.net',
                         # TODO: we need to change this to SSL Endpoint
                         'dns': 'shipit-workflow.staging.mozilla-releng.net.herokudns.com',
+                    },
+                },
+            },
+            {
+                'target': 'DOCKERHUB',
+                'options': {
+                    'testing': {
+                        'nix_path_attribute': 'docker',
+                    },
+                    'staging': {
+                        'nix_path_attribute': 'docker',
                     },
                 },
             },

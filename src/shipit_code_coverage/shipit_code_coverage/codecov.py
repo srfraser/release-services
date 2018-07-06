@@ -12,7 +12,6 @@ from cli_common.command import run_check
 from cli_common.log import get_logger
 from cli_common.taskcluster import get_service
 from cli_common.utils import ThreadPoolExecutorResult
-from cli_common.utils import retry
 from shipit_code_coverage import chunk_mapping
 from shipit_code_coverage import grcov
 from shipit_code_coverage import taskcluster
@@ -76,21 +75,15 @@ class CodeCov(object):
                                     self.repo_dir,
                                     purge=True,
                                     sharebase=shared_dir,
-                                    branch=b'tip')
+                                    revision=revision,
+                                    networkattempts=7)
 
         cmd.insert(0, hglib.HGPATH)
 
-        def do_clone():
-            proc = hglib.util.popen(cmd)
-            out, err = proc.communicate()
-            if proc.returncode:
-                raise hglib.error.CommandError(cmd, proc.returncode, out, err)
-
-            hg = hglib.open(self.repo_dir)
-
-            hg.update(rev=revision, clean=True)
-
-        retry(do_clone)
+        proc = hglib.util.popen(cmd)
+        out, err = proc.communicate()
+        if proc.returncode:
+            raise hglib.error.CommandError(cmd, proc.returncode, out, err)
 
         logger.info('mozilla-central cloned')
 
@@ -177,16 +170,24 @@ class CodeCov(object):
 
             chunk_mapping.generate(self.repo_dir, self.revision, self.artifactsHandler)
 
-            # Index the task in the TaskCluster index.
-            self.index_service.insertTask(
+            # Index the task in the TaskCluster index at the given revision and as "latest".
+            # Given that all tasks have the same rank, the latest task that finishes will
+            # overwrite the "latest" entry.
+            namespaces = [
                 'project.releng.services.project.{}.shipit_code_coverage.{}'.format(secrets[secrets.APP_CHANNEL], self.revision),
-                {
-                    'taskId': os.environ['TASK_ID'],
-                    'rank': 0,
-                    'data': {},
-                    'expires': (datetime.utcnow() + timedelta(180)).strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
-                }
-            )
+                'project.releng.services.project.{}.shipit_code_coverage.latest'.format(secrets[secrets.APP_CHANNEL]),
+            ]
+
+            for namespace in namespaces:
+                self.index_service.insertTask(
+                    namespace,
+                    {
+                        'taskId': os.environ['TASK_ID'],
+                        'rank': 0,
+                        'data': {},
+                        'expires': (datetime.utcnow() + timedelta(180)).strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
+                    }
+                )
 
             os.chdir('code-coverage-reports')
             self.githubUtils.update_codecoveragereports_repo()

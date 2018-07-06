@@ -5,10 +5,11 @@
 
 import datetime
 import random
-import time
+import typing
 
 import flask
 import flask_login
+import pytz
 import sqlalchemy as sa
 import werkzeug
 import werkzeug.exceptions
@@ -16,48 +17,58 @@ import werkzeug.exceptions
 import backend_common.auth
 import cli_common.log
 import releng_tooltool.aws
+import releng_tooltool.config
 import releng_tooltool.models
 import releng_tooltool.utils
 
 logger = cli_common.log.get_logger(__name__)
 
 
-def _get_region_and_bucket(region, regions):
+def _get_region_and_bucket(region: typing.Optional[str],
+                           regions: typing.Dict[str, str],
+                           ) -> typing.Tuple[str, str]:
     if region and region in regions:
         return region, regions[region]
     # no region specified, so return one at random
-    return random.choice(regions.items())
+    return random.choice(list(regions.items()))
 
 
-def search_batches(q):
-    return [row.to_dict()
+def search_batches(q: str) -> dict:
+    return dict(
+        result=[
+            row.to_dict()
             for row in releng_tooltool.models.Batch.query.filter(
-                sa.or_(releng_tooltool.models.Batch.author.contains(q),
-                       releng_tooltool.models.Batch.message.contains(q))).all()]
+                sa.or_(
+                    releng_tooltool.models.Batch.author.contains(q),
+                    releng_tooltool.models.Batch.message.contains(q)
+                )
+            ).all()
+        ]
+    )
 
 
-def get_batch(id):
+def get_batch(id: int) -> dict:
     row = releng_tooltool.models.Batch.query.filter(releng_tooltool.models.Batch.id == id).first()
     if not row:
         raise werkzeug.exceptions.NotFound
     return row.to_dict()
 
 
-def upload_batch(region, body):
+def upload_batch(body: dict, region: typing.Optional[str]=None) -> dict:
     if not body['message']:
         raise werkzeug.exceptions.BadRequest('message must be non-empty')
 
     if not body['files']:
         raise werkzeug.exceptions.BadRequest('a batch must include at least one file')
 
-    if body['author']:
-        raise werkzeug.exceptions.BadRequest('Author must not be specified for upload')
+    if 'author' in body:
+        raise werkzeug.exceptions.BadRequest('Author must NOT be specified for upload.')
 
     UPLOAD_EXPIRES_IN = flask.current_app.config['UPLOAD_EXPIRES_IN']
     if type(UPLOAD_EXPIRES_IN) is not int:
         raise werkzeug.exceptions.InternalServerError('UPLOAD_EXPIRES_IN should be of type int.')
 
-    S3_REGIONS = flask.current_app.config['S3_REGIONS']
+    S3_REGIONS = flask.current_app.config['S3_REGIONS']  # type: typing.Dict[str, str]
     if type(S3_REGIONS) is not dict:
         raise werkzeug.exceptions.InternalServerError('S3_REGIONS should be of type dict.')
     region, bucket = _get_region_and_bucket(region, S3_REGIONS)
@@ -65,59 +76,64 @@ def upload_batch(region, body):
     body['author'] = flask_login.current_user.get_id()
 
     # verify permissions based on visibilities
-    visibilities = set(f.visibility for f in body['files'].itervalues())
+    visibilities = set(f['visibility'] for f in body['files'].values())
     for visibility in visibilities:
-        prm = flask_login.current_user.has_permissions('project:releng:tooltool/upload/{}'.format(visibility))
-        if not prm or not prm.can():
+        permission = '{}/upload/{}'.format(
+            releng_tooltool.config.SCOPE_PREFIX,
+            visibility,
+        )
+        if not flask_login.current_user.has_permissions(permission):
             raise werkzeug.exceptions.Forbidden('no permission to upload {} files'.format(visibility))
 
     session = flask.g.db.session
 
     batch = releng_tooltool.models.Batch(
         uploaded=releng_tooltool.utils.now(),
-        author=body.author,
-        message=body.message,
+        author=body['author'],
+        message=body['message'],
     )
 
     s3 = flask.current_app.aws.connect_to('s3', region)
 
-    for filename, info in body.files.iteritems():
+    for filename, info in body['files'].items():
 
-        logger2 = logger.bind(tooltool_sha512=info.digest,
+        logger2 = logger.bind(tooltool_sha512=info['digest'],
                               tooltool_operation='upload',
                               tooltool_batch_id=batch.id,
                               mozdef=True)
 
-        if info.algorithm != 'sha512':
+        if info['algorithm'] != 'sha512':
             raise werkzeug.exceptions.BadRequest('`sha512` is the only allowed digest algorithm')
 
-        if not releng_tooltool.utils.is_valid_sha512(info.digest):
+        if not releng_tooltool.utils.is_valid_sha512(info['digest']):
             raise werkzeug.exceptions.BadRequest('Invalid sha512 digest'
                                                  )
-        digest = info.digest
+        digest = info['digest']
         file = releng_tooltool.models.File.query.filter(releng_tooltool.models.File.sha512 == digest).first()
-        if file and file.visibility != info.visibility:
+        if file and file.visibility != info['visibility']:
             raise werkzeug.exceptions.BadRequest('Cannot change a file\'s visibility level')
 
         if file and file.instances != []:
-            if file.size != info.size:
+            if file.size != info['size']:
                 raise werkzeug.exceptions.BadRequest('Size mismatch for {}'.format(filename))
         else:
             if not file:
                 file = releng_tooltool.models.File(sha512=digest,
-                                                   visibility=info.visibility,
-                                                   size=info.size)
+                                                   visibility=info['visibility'],
+                                                   size=info['size'])
                 session.add(file)
 
-            logger2.info('Generating signed S3 PUT URL to {} for {}; expiring in {}s'.format(info.digest[:10],
+            logger2.info('Generating signed S3 PUT URL to {} for {}; expiring in {}s'.format(info['digest'][:10],
                                                                                              flask_login.current_user,
                                                                                              UPLOAD_EXPIRES_IN))
 
-            info.put_url = s3.generate_url(method='PUT',
-                                           expires_in=UPLOAD_EXPIRES_IN,
-                                           bucket=bucket,
-                                           key=releng_tooltool.utils.keyname(info.digest),
-                                           headers={'Content-Type': 'application/octet-stream'})
+            info['put_url'] = s3.generate_url(
+                method='PUT',
+                expires_in=UPLOAD_EXPIRES_IN,
+                bucket=bucket,
+                key=releng_tooltool.utils.keyname(info['digest']),
+                headers={'Content-Type': 'application/octet-stream'},
+            )
 
             # The PendingUpload row needs to reflect the updated expiration
             # time, even if there's an existing pending upload that expires
@@ -126,7 +142,7 @@ def upload_batch(region, body):
             # rather than just a reference to the file object; and for that, we
             # need to flush the inserted file.
             session.flush()
-            expires = time.now() + datetime.timedelta(seconds=UPLOAD_EXPIRES_IN)
+            expires = releng_tooltool.utils.now() + datetime.timedelta(seconds=UPLOAD_EXPIRES_IN)
             pu = releng_tooltool.models.PendingUpload(file_id=file.id,
                                                       region=region,
                                                       expires=expires)
@@ -137,11 +153,12 @@ def upload_batch(region, body):
     session.add(batch)
     session.commit()
 
-    body.id = batch.id
-    return body
+    body['id'] = batch.id
+    return dict(result=body)
 
 
-def upload_complete(digest):
+def upload_complete(digest: str) -> typing.Union[werkzeug.Response,
+                                                 typing.Tuple[str, int]]:
 
     if not releng_tooltool.utils.is_valid_sha512(digest):
         raise werkzeug.exceptions.BadRequest('Invalid sha512 digest')
@@ -152,27 +169,45 @@ def upload_complete(digest):
     file = releng_tooltool.models.File.query.filter(releng_tooltool.models.File.sha512 == digest).first()
     if file:
         for pending_upload in file.pending_uploads:
-            until = pending_upload.expires - time.now()
+            until = pending_upload.expires.replace(tzinfo=pytz.UTC) - releng_tooltool.utils.now()
             if until > datetime.timedelta(0):
                 # add 1 second to avoid rounding / skew errors
                 headers = {'X-Retry-After': str(1 + int(until.total_seconds()))}
                 return werkzeug.Response(status=409, headers=headers)
 
-    # start a celery task in the background and return immediately
-    # TODO: grooming.check_file_pending_uploads.delay(digest)
+    exchange = 'exchange/{}/{}'.format(
+        flask.current_app.config['PULSE_USER'],
+        releng_tooltool.config.PROJECT_NAME,
+    )
+    logger.info('Sending digest `{}` to queue `{}` exfor route `{}`.'.format(
+        digest,
+        exchange,
+        releng_tooltool.config.PULSE_ROUTE_CHECK_FILE_PENDING_UPLOADS,
+    ))
+    try:
+        flask.current_app.pulse.publish(
+            exchange,
+            releng_tooltool.config.PULSE_ROUTE_CHECK_FILE_PENDING_UPLOADS,
+            dict(digest=digest),
+        )
+    except Exception as e:
+        import traceback
+        msg = 'Can\'t send notification to pulse.'
+        trace = traceback.format_exc()
+        logger.error('{0}\nException:{1}\nTraceback: {2}'.format(msg, e, trace))  # noqa
 
     return '{}', 202
 
 
-def search_files(q):
+def search_files(q: str) -> dict:
     session = flask.g.db.session
     query = session.query(releng_tooltool.models.File).join(releng_tooltool.models.BatchFile)
     query = query.filter(sa.or_(releng_tooltool.models.BatchFile.filename.contains(q),
                                 releng_tooltool.models.File.sha512.startswith(q)))
-    return [row.to_dict() for row in query.all()]
+    return dict(result=[row.to_dict() for row in query.all()])
 
 
-def get_file(digest):
+def get_file(digest: str) -> dict:
 
     if not releng_tooltool.utils.is_valid_sha512(digest):
         raise werkzeug.exceptions.BadRequest('Invalid sha512 digest')
@@ -184,9 +219,9 @@ def get_file(digest):
     return row.to_dict(include_instances=True)
 
 
-@backend_common.auth.auth.require_scopes(['project:releng:tooltool/manage'])
-def patch_file(digest, body):
-    S3_REGIONS = flask.current_app.config['S3_REGIONS']
+@backend_common.auth.auth.require_scopes([releng_tooltool.config.SCOPE_PREFIX + '/manage'])
+def patch_file(digest: str, body: dict) -> dict:
+    S3_REGIONS = flask.current_app.config['S3_REGIONS']  # type: typing.Dict[str, str]
     if type(S3_REGIONS) is not dict:
         raise werkzeug.exceptions.InternalServerError('S3_REGIONS should be of type dict.')
 
@@ -230,10 +265,10 @@ def patch_file(digest, body):
     return file.to_dict(include_instances=True)
 
 
-def download_file(digest, region=None):
+def download_file(digest: str, region: typing.Optional[str]=None) -> werkzeug.Response:
     logger2 = logger.bind(tooltool_sha512=digest, tooltool_operation='download_file')
 
-    S3_REGIONS = flask.current_app.config['S3_REGIONS']
+    S3_REGIONS = flask.current_app.config['S3_REGIONS']  # type: typing.Dict[str, str]
     if type(S3_REGIONS) is not dict:
         raise werkzeug.exceptions.InternalServerError('S3_REGIONS should be of type dict.')
 
@@ -258,7 +293,11 @@ def download_file(digest, region=None):
 
     # check visibility
     if file_row.visibility != 'public' or not ALLOW_ANONYMOUS_PUBLIC_DOWNLOAD:
-        if not flask_login.current_user.has_permissions('project:releng:tooltool/download/{}'.format(file_row.visibility)):
+        permission = '{}/download/{}'.format(
+            releng_tooltool.config.SCOPE_PREFIX,
+            file_row.visibility,
+        )
+        if not flask_login.current_user.has_permissions(permission):
             raise werkzeug.exceptions.Forbidden
 
     # figure out which region to use, and from there which bucket

@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 import os.path
 
+import pytest
+
 BAD_CPP_SRC = '''#include <demo>
 int \tmain(void){
  printf("plop");return 42;
@@ -174,3 +176,84 @@ def test_clang_tidy_checks(mock_config, mock_repository, mock_clang):
     missing = clang_tidy.list_missing_checks()
     assert len(missing) == 0, \
         'Missing clang-tidy checks: {}'.format(', '.join(missing))
+
+
+def test_clang_tidy_parser(mock_config, mock_repository, mock_revision, mock_clang_output, mock_clang_issues):
+    '''
+    Test the clang-tidy (or mach static-analysis) parser
+    '''
+    from shipit_static_analysis.clang.tidy import ClangTidy
+    clang_tidy = ClangTidy()
+
+    # Empty Output
+    clang_output = 'Nothing.'
+    issues = clang_tidy.parse_issues(clang_output, mock_revision)
+    assert issues == []
+
+    # No warnings
+    clang_output = 'Whatever text.\n0 warnings present.'
+    issues = clang_tidy.parse_issues(clang_output, mock_revision)
+    assert issues == []
+
+    # One warning, but no header
+    clang_output = 'Whatever text.\n1 warnings present.'
+    with pytest.raises(Exception):
+        clang_tidy.parse_issues(clang_output, mock_revision)
+
+    # One warning, One header
+    clang_output = '/path/to/test.cpp:42:39: error: methods annotated with MOZ_NO_DANGLING_ON_TEMPORARIES cannot be && ref-qualified [mozilla-dangling-on-temporary]'  # noqa
+    clang_output += '\n1 warnings present.'
+    issues = clang_tidy.parse_issues(clang_output, mock_revision)
+    assert len(issues) == 1
+    assert issues[0].path == '/path/to/test.cpp'
+    assert issues[0].line == 42
+    assert issues[0].check == 'mozilla-dangling-on-temporary'
+
+    # Real case
+    issues = clang_tidy.parse_issues(mock_clang_output, mock_revision)
+    assert len(issues) == 13
+    sep = '\n' + '-'*20 + '\n'
+    summary = sep.join(issue.as_text() for issue in issues)
+    assert summary == mock_clang_issues
+
+
+def test_as_text(mock_revision):
+    '''
+    Test text export for ClangTidyIssue
+    '''
+    from shipit_static_analysis.clang.tidy import ClangTidyIssue
+    parts = ('test.cpp', '42', '51', 'error', 'dummy message withUppercaseChars', 'dummy-check')
+    issue = ClangTidyIssue(parts, mock_revision)
+    issue.body = 'Dummy body withUppercaseChars'
+
+    assert issue.as_text() == 'Error: Dummy message withUppercaseChars [clang-tidy: dummy-check]\nDummy body withUppercaseChars'
+
+
+def test_as_markdown(mock_revision):
+    '''
+    Test markdown generation for ClangTidyIssue
+    '''
+    from shipit_static_analysis.clang.tidy import ClangTidyIssue
+    parts = ('test.cpp', '42', '51', 'error', 'dummy message', 'dummy-check')
+    issue = ClangTidyIssue(parts, mock_revision)
+    issue.body = 'Dummy body'
+
+    assert issue.as_markdown() == '''
+## clang-tidy error
+
+- **Message**: dummy message
+- **Location**: test.cpp:42:51
+- **In patch**: no
+- **Clang check**: dummy-check
+- **Publishable check**: no
+- **Third Party**: no
+- **Expanded Macro**: no
+- **Publishable **: no
+- **Is new**: no
+
+```
+Dummy body
+```
+
+
+'''

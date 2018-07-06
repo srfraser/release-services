@@ -97,6 +97,11 @@ def mock_issues():
         def as_text(self):
             return str(self.nb)
 
+        def as_dict(self):
+            return {
+                'nb': self.nb,
+            }
+
         def is_publishable(self):
             return self.nb % 2 == 0
 
@@ -372,7 +377,8 @@ def mock_clang(tmpdir, monkeypatch):
     def mock_mach(command, *args, **kwargs):
         if command[:5] == ['gecko-env', './mach', '--log-no-times', 'static-analysis', 'check']:
             command = ['clang-tidy', ] + command[5:]
-            return real_check_output(command, *args, **kwargs)
+            output = real_check_output(command, *args, **kwargs)
+            return output + b'\n42 warnings present.'
 
         # Really run command through normal check_output
         return real_check_output(command, *args, **kwargs)
@@ -396,7 +402,7 @@ def mock_workflow(tmpdir, mock_repository, mock_config):
         os.environ['MOZCONFIG'] = str(tmpdir.join('mozconfig').realpath())
 
     return MockWorkflow(
-        reporters=[],
+        reporters={},
         analyzers=['clang-tidy', 'clang-format', 'mozlint'],
     )
 
@@ -409,3 +415,23 @@ def test_cpp(mock_config, mock_repository):
     path = os.path.join(mock_config.repo_dir, 'test.cpp')
     with open(path, 'w') as f:
         f.write(TEST_CPP)
+
+
+@pytest.fixture
+def mock_clang_output():
+    '''
+    Load a real case clang output
+    '''
+    path = os.path.join(MOCK_DIR, 'clang-output.txt')
+    with open(path) as f:
+        return f.read()
+
+
+@pytest.fixture
+def mock_clang_issues():
+    '''
+    Load parsed issues from a real case (above)
+    '''
+    path = os.path.join(MOCK_DIR, 'clang-issues.txt')
+    with open(path) as f:
+        return f.read()

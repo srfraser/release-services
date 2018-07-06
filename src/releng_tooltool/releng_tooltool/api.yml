@@ -10,6 +10,47 @@ produces:
 paths:
 
 
+  /init:
+
+    get:
+      operationId: "backend_common.auth.initial_data"
+      description: Initial data for frontend
+      responses:
+        200:
+          description: Initial data
+          schema:
+            type: object
+            required:
+              - user
+              - perms
+            properties:
+              user:
+                type: object
+                required:
+                  - type
+                  - permissions
+                properties:
+                  type:
+                    type: string
+                  permissions:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - doc
+                        - name
+                      properties:
+                        doc:
+                          type: string
+                        name:
+                          type: string
+                  authenticated_email:
+                    type: string
+              perms:
+                type: object
+                additionalProperties:
+                  type: string
+
   /upload:
 
     get:
@@ -27,9 +68,14 @@ paths:
         200:
           description: An array of upload batches.
           schema:
-            type: array
-            items:
-              $ref: '#/definitions/UploadBatch'
+            type: object
+            required:
+              - result
+            properties:
+              result:
+                type: array
+                items:
+                  $ref: '#/definitions/UploadBatch'
 
     post:
       operationId: "releng_tooltool.api.upload_batch"
@@ -62,13 +108,19 @@ paths:
             The region query argument ``region=us-west-1`` indicates a
             preference for URLs in that region, although if the region is not
             available then URLs in other regions may be returned.
-          required: true
+          required: false
+          default: null
           type: string
       responses:
         200:
           description: Upload batch.
           schema:
-            $ref: '#/definitions/UploadBatch'
+            type: object
+            required:
+              - result
+            properties:
+              result:
+                $ref: '#/definitions/UploadBatch'
 
 
   /upload/{id}:
@@ -148,9 +200,14 @@ paths:
         200:
           description: File
           schema:
-            type: array
-            items:
-              $ref: '#/definitions/File'
+            type: object
+            required:
+              - result
+            properties:
+              result:
+                type: array
+                items:
+                  $ref: '#/definitions/File'
 
 
 
@@ -308,7 +365,6 @@ definitions:
       together -- similar to a version-control commit.  The message and files
       list must be non-empty.
     required:
-      - id
       - message
       - files
     properties:
