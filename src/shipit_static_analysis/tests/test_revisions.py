@@ -14,12 +14,12 @@ def test_mozreview():
     '''
     from shipit_static_analysis.revisions import MozReviewRevision
 
-    r = MozReviewRevision('308c22e7899048467002de4ffb126cac0875c994:164530:7')
+    r = MozReviewRevision('164530', '308c22e7899048467002de4ffb126cac0875c994', '7')
     assert r.mercurial == '308c22e7899048467002de4ffb126cac0875c994'
     assert r.review_request_id == 164530
     assert r.diffset_revision == 7
     assert r.url == 'https://reviewboard.mozilla.org/r/164530/'
-    assert r.build_diff_name() == '308c22e7-164530-7-clang-format.diff'
+    assert repr(r) == '308c22e7-164530-7'
 
 
 @responses.activate
@@ -39,8 +39,8 @@ def test_phabricator(mock_phabricator, mock_repository, mock_config):
     assert not hasattr(r, 'mercurial')
     assert r.diff_id == 42
     assert r.diff_phid == 'PHID-DIFF-testABcd12'
-    assert r.url == 'https://phabricator.test/PHID-DIFF-testABcd12/'
-    assert r.build_diff_name() == 'PHID-DIFF-testABcd12-clang-format.diff'
+    assert r.url == 'https://phabricator.test/D51'
+    assert repr(r) == 'PHID-DIFF-testABcd12'
     assert r.id == 51  # revision
 
     # Check test.txt content
@@ -126,7 +126,7 @@ def test_mercurial_patch(mock_config, mock_repository):
     assert mock_repository.tip().node == tip
 
     # Load the revision
-    mozrev = MozReviewRevision('{}:12345:1'.format(revision.decode('utf-8')))
+    mozrev = MozReviewRevision('12345', revision.decode('utf-8'), '1')
     mozrev.load(mock_repository)
     mozrev.analyze_patch()
 

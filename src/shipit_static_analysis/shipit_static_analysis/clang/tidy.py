@@ -111,7 +111,17 @@ class ClangTidy(object):
             logger.error('Mach static analysis failed: {}'.format(e.output))
             raise
 
-        issues = self.parse_issues(clang_output.decode('utf-8'), revision)
+        clang_output = clang_output.decode('utf-8')
+
+        # Dump raw clang-tidy output as a Taskcluster artifact (for debugging)
+        clang_output_path = os.path.join(
+            settings.taskcluster_results_dir,
+            '{}-clang-tidy.txt'.format(repr(revision)),
+        )
+        with open(clang_output_path, 'w') as f:
+            f.write(clang_output)
+
+        issues = self.parse_issues(clang_output, revision)
 
         # Report stats for these issues
         stats.report_issues('clang-tidy', issues)
@@ -170,9 +180,9 @@ class ClangTidy(object):
 
             if issue.is_problem():
                 # Save problem to append notes
-                # Skip diagnostic errors
+                # Skip diagnostic errors, but warn through Sentry
                 if issue.check == 'clang-diagnostic-error':
-                    logger.info('Skipping clang-diagnostic-error: {}'.format(issue))
+                    logger.error('Encountered a clang-diagnostic-error: {}'.format(issue))
                 else:
                     issues.append(issue)
                     mode = issue.is_third_party() and '3rd party' or 'in-tree'
@@ -275,6 +285,10 @@ class ClangTidyIssue(Issue):
         '''
         Is this issue using a publishable check ?
         '''
+        # Never publish a note (no check attached)
+        if not self.is_problem():
+            return False
+
         return settings.is_publishable_check(self.check)
 
     def as_text(self):
