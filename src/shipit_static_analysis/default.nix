@@ -4,9 +4,18 @@
 let
 
   inherit (releng_pkgs.lib) mkTaskclusterHook mkTaskclusterMergeEnv mkTaskclusterMergeRoutes mkPython fromRequirementsFile filterSource ;
-  inherit (releng_pkgs.pkgs) writeScript gcc cacert gcc-unwrapped glibc glibcLocales xorg patch nodejs-8_x git python27 python35 coreutils shellcheck clang_5 zlib;
+  inherit (releng_pkgs.pkgs) writeScript gcc cacert gcc-unwrapped glibc glibcLocales xorg patch nodejs-8_x git python27 python36 coreutils clang_5 zlib;
   inherit (releng_pkgs.pkgs.lib) fileContents concatStringsSep ;
   inherit (releng_pkgs.tools) pypi2nix mercurial;
+
+  # we require shellcheck 0.4.7 which is in older nixpkgs
+  old-nixpkgs = import (releng_pkgs.pkgs.fetchFromGitHub {
+    owner = "NixOS";
+    repo = "nixpkgs-channels";
+    rev = "cc4677c36ee8d880e881459ad114fd2224b3ac1c";
+    sha256 = "1rc1pjnvfi194gka45zc1nivzsncc819kvxlfv277l2c8ryhgbpc";
+  }) {};
+  shellcheck = old-nixpkgs.shellcheck;
 
   nodejs = nodejs-8_x;
   python = import ./requirements.nix { inherit (releng_pkgs) pkgs; };
@@ -16,7 +25,7 @@ let
   # Customize gecko environment with Nodejs & Python 3 for linters
   gecko-env = releng_pkgs.gecko-env.overrideDerivation(old : {
     buildPhase = old.buildPhase + ''
-      echo "export PATH=${nodejs}/bin:${python35}/bin:\$PATH" >> $out/bin/gecko-env
+      echo "export PATH=${nodejs}/bin:${python36}/bin:\$PATH" >> $out/bin/gecko-env
     '';
  } );
 
@@ -125,8 +134,8 @@ let
       ln -s ${git}/bin/git $out/bin
       ln -s ${python27}/bin/python2.7 $out/bin/python2.7
       ln -s ${python27}/bin/python2.7 $out/bin/python2
-      ln -s ${python35}/bin/python3.5 $out/bin/python3.5
-      ln -s ${python35}/bin/python3.5 $out/bin/python3
+      ln -s ${python36}/bin/python3.6 $out/bin/python3.6
+      ln -s ${python36}/bin/python3.6 $out/bin/python3
       ln -s ${coreutils}/bin/env $out/usr/bin/env
       ln -s ${coreutils}/bin/ld $out/bin
       ln -s ${coreutils}/bin/as $out/bin
@@ -139,7 +148,7 @@ let
       ln -s ${gecko-env}/bin/gecko-env $out/bin
     '';
     shellHook = ''
-      export PATH="${mercurial}/bin:${git}/bin:${python27}/bin:${python35}/bin:${nodejs}/bin:$PATH"
+      export PATH="${mercurial}/bin:${git}/bin:${python27}/bin:${python36}/bin:${nodejs}/bin:$PATH"
 
       # Setup mach automation
       export MOZ_AUTOMATION=1
@@ -184,7 +193,7 @@ let
       update = writeScript "update-${name}" ''
         pushd ${self.src_path}
         ${pypi2nix}/bin/pypi2nix -v \
-          -V 3.5 \
+          -V 3.6 \
           -E "libffi openssl pkgconfig freetype.dev" \
           -r requirements.txt \
           -r requirements-dev.txt

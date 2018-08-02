@@ -21,12 +21,22 @@ let
           )
         );
 
+  cli_common_path =
+    if builtins.pathExists ./../lib/cli_common
+    then ./../lib/cli_common/default.nix
+    else ./../../lib/cli_common/default.nix;
+
+  backend_common_path =
+    if builtins.pathExists ./../lib/backend_common
+    then ./../lib/backend_common/default.nix
+    else ./../../lib/backend_common/default.nix;
+
 in skipOverrides {
 
   # enable test for common packages
 
-  "mozilla-cli-common" = import ./../lib/cli_common/default.nix { inherit pkgs; };
-  "mozilla-backend-common" = import ./../lib/backend_common/default.nix { inherit pkgs; };
+  "mozilla-cli-common" = import cli_common_path { inherit pkgs; };
+  "mozilla-backend-common" = import backend_common_path { inherit pkgs; };
 
   # -- in alphabetic order --
 
@@ -56,7 +66,10 @@ in skipOverrides {
 
   "chardet" = self: old: {
     patchPhase = ''
-      sed -i -e "s|setup_requires=\['pytest-runner'\],||" setup.py
+      sed -i \
+          -e "s|setup_requires=\['pytest-runner'\],||" \
+          -e "s|setup_requires=pytest_runner,||" \
+          setup.py
     '';
   };
 
@@ -154,9 +167,28 @@ in skipOverrides {
     '';
   };
 
+  "pluggy" = self: old: {
+    patchPhase = ''
+      sed -i \
+        -e "s|setup_requires=\['setuptools-scm'\],||" \
+        setup.py
+    '';
+  };
+
+  "py" = self: old: {
+    patchPhase = ''
+      sed -i \
+        -e "s|setup_requires=\[\"setuptools-scm\"\],||" \
+        setup.py
+    '';
+  };
+
   "pytest" = self: old: {
     patchPhase = ''
       sed -i \
+        -e "s|py>=1.5.0|py|" \
+        -e "s|pluggy>=0.5,<0.8|pluggy|" \
+        -e "s|pluggy>=0.7|pluggy|" \
         -e "s|setup_requires=\['setuptools-scm'\],||" \
         -e "s|setup_requires=\[\"setuptools-scm\"\],||" \
         setup.py
@@ -197,8 +229,8 @@ in skipOverrides {
   "RBTools" = self: old: {
     patches = [
          (pkgs.fetchurl {
-           url = "https://github.com/La0/rbtools/commit/190b4adb768897f65cf7ec57806649bc14c8e45d.diff";
-           sha256 = "1hh6i3cffsc4fxr4jqlxralnf78529i0pspm7jn686a2s6bh26mw";
+           url = "https://github.com/La0/rbtools/commit/60a96a29c26fd1a546bb66a5860e2b6b36649d58.diff";
+           sha256 = "1q0gpknxymm3qg4mb1459ka4ralqa1bndyfv3g3pn4sj7rixv05f";
          })
       ];
   };

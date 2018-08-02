@@ -2,8 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
+import glob
 import os
 
 import click
@@ -59,9 +58,9 @@ TEMPLATES = {
 }
 
 DEV_PROJECTS = ['postgresql']
-PROJECTS = list(map(lambda x: x.replace('_', '-'),
+PROJECTS = list(map(lambda x: x.replace('_', '-')[len(SRC_DIR) + 1:],
                     filter(lambda x: os.path.exists(os.path.join(SRC_DIR, x, 'default.nix')),
-                           os.listdir(SRC_DIR))))
+                           glob.glob(SRC_DIR + '/*') + glob.glob(SRC_DIR + '/*/*'))))
 PROJECTS += DEV_PROJECTS
 
 
@@ -544,103 +543,24 @@ PROJECTS_CONFIG = {
             },
         ],
     },
-    'shipit-frontend': {
-        'run': 'ELM',
-        'run_options': {
-            'port': 8010,
-            'envs': {
-                'bugzilla-url': 'https://bugzilla-dev.allizom.org',
-            }
-        },
-        'requires': [
-            'shipit-uplift',
-        ],
-        'deploys': [
-            {
-                'target': 'S3',
-                'options': {
-                    'testing': {
-                        's3_bucket': 'shipit-testing-frontend',
-                        'url': 'https://shipit.testing.mozilla-releng.net',
-                        'dns': 'd2jpisuzgldax2.cloudfront.net.',
-                        'envs': {
-                            'bugzilla-url': 'https://bugzilla.mozilla.org',
-                        },
-                        'csp': [
-                            'https://login.taskcluster.net',
-                            'https://auth.taskcluster.net',
-                            'https://bugzilla.mozilla.org',
-                        ],
-                    },
-                    'staging': {
-                        's3_bucket': 'shipit-staging-frontend',
-                        'url': 'https://shipit.staging.mozilla-releng.net',
-                        'dns': 'd2ld4e8bl8yd1l.cloudfront.net.',
-                        'envs': {
-                            'bugzilla-url': 'https://bugzilla.mozilla.org',
-                        },
-                        'csp': [
-                            'https://login.taskcluster.net',
-                            'https://auth.taskcluster.net',
-                            'https://bugzilla.mozilla.org',
-                            'https://uplift.shipit.staging.mozilla-releng.net',
-                        ],
-                    },
-                    'production': {
-                        's3_bucket': 'shipit-production-frontend',
-                        'url': 'https://shipit.mozilla-releng.net',
-                        'dns': 'dve8yd1431ifz.cloudfront.net.',
-                        'envs': {
-                            'bugzilla-url': 'https://bugzilla.mozilla.org',
-                        },
-                        'csp': [
-                            'https://login.taskcluster.net',
-                            'https://auth.taskcluster.net',
-                            'https://bugzilla.mozilla.org',
-                            'https://uplift.shipit.mozilla-releng.net',
-                        ],
-                    },
-                },
-            },
-        ],
-    },
-    'shipit-pipeline': {
+    'shipit-code-coverage-crawler': {
         'checks': [
             ('Checking code quality', 'flake8'),
             ('Running tests', 'pytest tests/'),
         ],
-        'run': 'FLASK',
-        'run_options': {
-            'port': 8012,
-        },
-        'requires': [
-            'postgresql',
-        ],
         'deploys': [
             {
-                'target': 'HEROKU',
+                'target': 'TASKCLUSTER_HOOK',
                 'options': {
                     'testing': {
-                        'nix_path_attribute': 'docker',
-                        'heroku_app': 'shipit-testing-pipeline',
-                        'heroku_dyno_type': 'web',
-                        'url': 'https://pipeline.shipit.testing.mozilla-releng.net',
-                        'dns': 'pipeline.shipit.testing.mozilla-releng.net.herokudns.com',
+                        'nix_path_attribute': 'deploy.testing',
                     },
                     'staging': {
-                        'nix_path_attribute': 'docker',
-                        'heroku_app': 'shipit-staging-pipeline',
-                        'heroku_dyno_type': 'web',
-                        'url': 'https://pipeline.shipit.staging.mozilla-releng.net',
-                        'dns': 'pipeline.shipit.staging.mozilla-releng.net.herokudns.com',
+                        'nix_path_attribute': 'deploy.staging',
                     },
-                    # 'production': {
-                    #     'nix_path_attribute': 'docker',
-                    #     'heroku_app': 'shipit-production-pipeline',
-                    #     'heroku_dyno_type': 'web',
-                    #     'url': 'https://pipeline.shipit.mozilla-releng.net',
-                    #     'dns': 'pipeline.shipit.mozilla-releng.net.herokudns.com',
-                    # },
+                    'production': {
+                        'nix_path_attribute': 'deploy.production',
+                    },
                 },
             },
         ],
@@ -674,51 +594,6 @@ PROJECTS_CONFIG = {
             },
         ],
     },
-    'shipit-signoff': {
-        'checks': [
-            ('Checking code quality', 'flake8'),
-            ('Running tests', 'pytest tests/'),
-        ],
-        'run': 'FLASK',
-        'run_options': {
-            'port': 8013,
-            'envs': {
-                'AUTH0_CLIENT_ID': 'XXX',
-                'AUTH0_CLIENT_SECRET': 'YYY',
-            }
-        },
-        'requires': [
-            'postgresql',
-        ],
-        'deploys': [
-            {
-                'target': 'HEROKU',
-                'options': {
-                    'testing': {
-                        'nix_path_attribute': 'docker',
-                        'heroku_app': 'shipit-testing-signoff',
-                        'heroku_dyno_type': 'web',
-                        'url': 'https://signoff.shipit.testing.mozilla-releng.net',
-                        'dns': 'signoff.shipit.testing.mozilla-releng.net.herokudns.com',
-                    },
-                    'staging': {
-                        'nix_path_attribute': 'docker',
-                        'heroku_app': 'shipit-staging-signoff',
-                        'heroku_dyno_type': 'web',
-                        'url': 'https://signoff.shipit.staging.mozilla-releng.net',
-                        'dns': 'signoff.shipit.staging.mozilla-releng.net.herokudns.com',
-                    },
-                    # 'production': {
-                    #     'nix_path_attribute': 'docker',
-                    #     'heroku_app': 'shipit-production-signoff',
-                    #     'heroku_dyno_type': 'web',
-                    #     'url': 'https://signoff.shipit.mozilla-releng.net',
-                    #     'dns': 'signoff.shipit.mozilla-releng.net.herokudns.com',
-                    # },
-                },
-            },
-        ],
-    },
     'shipit-static-analysis': {
         'checks': [
             ('Checking code quality', 'flake8'),
@@ -740,47 +615,6 @@ PROJECTS_CONFIG = {
                 },
             },
         ]
-    },
-    'shipit-taskcluster': {
-        'checks': [
-            ('Checking code quality', 'flake8'),
-            ('Running tests', 'pytest tests/'),
-        ],
-        'run': 'FLASK',
-        'run_options': {
-            'port': 8014,
-        },
-        'requires': [
-            'postgresql',
-        ],
-        'deploys': [
-            {
-                'target': 'HEROKU',
-                'options': {
-                    'testing': {
-                        'nix_path_attribute': 'docker',
-                        'heroku_app': 'shipit-testing-taskcluster',
-                        'heroku_dyno_type': 'web',
-                        'url': 'https://taskcluster.shipit.testing.mozilla-releng.net',
-                        'dns': 'taskcluster.shipit.testing.mozilla-releng.net.herokudns.com',
-                    },
-                    'staging': {
-                        'nix_path_attribute': 'docker',
-                        'heroku_app': 'shipit-staging-taskcluster',
-                        'heroku_dyno_type': 'web',
-                        'url': 'https://taskcluster.shipit.staging.mozilla-releng.net',
-                        'dns': 'taskcluster.shipit.staging.mozilla-releng.net.herokudns.com',
-                    },
-                    # 'production': {
-                    #     'nix_path_attribute': 'docker',
-                    #     'heroku_app': 'shipit-production-taskcluster',
-                    #     'heroku_dyno_type': 'web',
-                    #     'url': 'https://taskcluster.shipit.mozilla-releng.net',
-                    #     'dns': 'taskcluster.shipit.mozilla-releng.net.herokudns.com',
-                    # },
-                },
-            },
-        ],
     },
     'shipit-uplift': {
         'checks': [
@@ -837,35 +671,77 @@ PROJECTS_CONFIG = {
             'postgresql',
         ],
         'deploys': [
-            {
-                'target': 'HEROKU',
-                'options': {
-                    'testing': {
-                        'nix_path_attribute': 'docker',
-                        'heroku_app': 'shipit-testing-workflow',
-                        'heroku_dyno_type': 'web',
-                        'url': 'https://shipit-workflow.testing.mozilla-releng.net',
-                        # TODO: we need to change this to SSL Endpoint
-                        'dns': 'shipit-workflow.testing.mozilla-releng.net.herokudns.com',
-                    },
-                    'staging': {
-                        'nix_path_attribute': 'docker',
-                        'heroku_app': 'shipit-staging-workflow',
-                        'heroku_dyno_type': 'web',
-                        'url': 'https://shipit-workflow.staging.mozilla-releng.net',
-                        # TODO: we need to change this to SSL Endpoint
-                        'dns': 'shipit-workflow.staging.mozilla-releng.net.herokudns.com',
-                    },
-                },
+            # {
+            #     'target': 'DOCKERHUB',
+            #     'options': {
+            #         'testing': {
+            #             'nix_path_attribute': 'dockerflow',
+            #         },
+            #         'staging': {
+            #             'nix_path_attribute': 'dockerflow',
+            #         },
+            #         'production': {
+            #             'nix_path_attribute': 'dockerflow',
+            #         },
+            #     },
+            # },
+        ],
+    },
+    'shipit-frontend': {
+        'run': 'NEUTRINO',
+        'run_options': {
+            'port': 8010,
+            'envs': {
+                'CONFIG': 'dev',
             },
+        },
+        'requires': [
+            'shipit-workflow',
+        ],
+        'checks': [
+            ('Checking code quality', 'yarn lint'),
+            ('Running tests', 'yarn test'),
+        ],
+        'deploys': [
             {
-                'target': 'DOCKERHUB',
+                'target': 'S3',
                 'options': {
                     'testing': {
-                        'nix_path_attribute': 'docker',
+                        's3_bucket': 'shipit-testing-frontend',
+                        'url': 'https://shipit.testing.mozilla-releng.net',
+                        'dns': 'd2jpisuzgldax2.cloudfront.net.',
+                        'envs': {
+                            # Use the same API as staging
+                            'CONFIG': 'staging',
+                        },
+                        'csp': [
+                            'https://hg.mozilla.org',
+                            'https://queue.taskcluster.net',
+                        ],
                     },
                     'staging': {
-                        'nix_path_attribute': 'docker',
+                        's3_bucket': 'shipit-staging-frontend',
+                        'url': 'https://shipit.staging.mozilla-releng.net',
+                        'dns': 'd2ld4e8bl8yd1l.cloudfront.net.',
+                        'envs': {
+                            'CONFIG': 'staging',
+                        },
+                        'csp': [
+                            'https://hg.mozilla.org',
+                            'https://queue.taskcluster.net',
+                        ],
+                    },
+                    'production': {
+                        's3_bucket': 'shipit-production-frontend',
+                        'url': 'https://shipit.mozilla-releng.net',
+                        'dns': 'dve8yd1431ifz.cloudfront.net.',
+                        'envs': {
+                            'CONFIG': 'production',
+                        },
+                        'csp': [
+                            'https://hg.mozilla.org',
+                            'https://queue.taskcluster.net',
+                        ],
                     },
                 },
             },
