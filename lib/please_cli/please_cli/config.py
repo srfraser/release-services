@@ -40,8 +40,7 @@ TMP_DIR = os.path.join(ROOT_DIR, 'tmp')
 CHANNELS = ['master', 'testing', 'staging', 'production']
 DEPLOY_CHANNELS = ['testing', 'staging', 'production']
 
-DOCKER_REGISTRY = "https://index.docker.io"
-DOCKER_REPO = 'mozillareleng/services'
+DOCKER_BASE_REPO = 'mozillareleng/services'
 DOCKER_BASE_TAG = 'base-' + VERSION
 
 NIX_BIN_DIR = os.environ.get("NIX_BIN_DIR", "")  # must end with /
@@ -57,7 +56,7 @@ TEMPLATES = {
     'backend-json-api': {}
 }
 
-DEV_PROJECTS = ['postgresql']
+DEV_PROJECTS = ['postgresql', 'redis']
 PROJECTS = list(map(lambda x: x.replace('_', '-')[len(SRC_DIR) + 1:],
                     filter(lambda x: os.path.exists(os.path.join(SRC_DIR, x, 'default.nix')),
                            glob.glob(SRC_DIR + '/*') + glob.glob(SRC_DIR + '/*/*'))))
@@ -71,6 +70,13 @@ PROJECTS_CONFIG = {
         'run_options': {
             'port': 9000,
             'data_dir': os.path.join(TMP_DIR, 'postgresql'),
+        },
+    },
+    'redis': {
+        'run': 'REDIS',
+        'run_options': {
+            'port': 6379,
+            'data_dir': os.path.join(TMP_DIR, 'redis'),
         },
     },
     'releng-notification-policy': {
@@ -384,14 +390,20 @@ PROJECTS_CONFIG = {
                     'testing': {
                         'nix_path_attribute': 'cron.replicate.testing',
                         'name-suffix': '-replicate',
+                        'docker_registry': 'index.docker.io',
+                        'docker_repo': 'mozillareleng/services',
                     },
                     'staging': {
                         'nix_path_attribute': 'cron.replicate.staging',
                         'name-suffix': '-replicate',
+                        'docker_registry': 'index.docker.io',
+                        'docker_repo': 'mozillareleng/services',
                     },
                     'production': {
                         'nix_path_attribute': 'cron.replicate.production',
                         'name-suffix': '-replicate',
+                        'docker_registry': 'index.docker.io',
+                        'docker_repo': 'mozillareleng/services',
                     },
                 },
             },
@@ -401,14 +413,20 @@ PROJECTS_CONFIG = {
                     'testing': {
                         'nix_path_attribute': 'cron.check_pending_uploads.testing',
                         'name-suffix': '-check_pending_uploads',
+                        'docker_registry': 'index.docker.io',
+                        'docker_repo': 'mozillareleng/services',
                     },
                     'staging': {
                         'nix_path_attribute': 'cron.check_pending_uploads.staging',
                         'name-suffix': '-check_pending_uploads',
+                        'docker_registry': 'index.docker.io',
+                        'docker_repo': 'mozillareleng/services',
                     },
                     'production': {
                         'nix_path_attribute': 'cron.check_pending_uploads.production',
                         'name-suffix': '-check_pending_uploads',
+                        'docker_registry': 'index.docker.io',
+                        'docker_repo': 'mozillareleng/services',
                     },
                 },
             },
@@ -458,7 +476,7 @@ PROJECTS_CONFIG = {
             },
         ],
     },
-    'shipit-bot-uplift': {
+    'uplift/bot': {
         'checks': [
             ('Checking code quality', 'flake8'),
             ('Running tests', 'pytest tests/'),
@@ -469,12 +487,18 @@ PROJECTS_CONFIG = {
                 'options': {
                     'testing': {
                         'nix_path_attribute': 'deploy.testing',
+                        'docker_registry': 'index.docker.io',
+                        'docker_repo': 'mozillareleng/services',
                     },
                     'staging': {
                         'nix_path_attribute': 'deploy.staging',
+                        'docker_registry': 'index.docker.io',
+                        'docker_repo': 'mozillareleng/services',
                     },
                     'production': {
                         'nix_path_attribute': 'deploy.production',
+                        'docker_registry': 'index.docker.io',
+                        'docker_repo': 'mozillareleng/services',
                     },
                 },
             },
@@ -491,12 +515,18 @@ PROJECTS_CONFIG = {
                 'options': {
                     'testing': {
                         'nix_path_attribute': 'deploy.testing',
+                        'docker_registry': 'index.docker.io',
+                        'docker_repo': 'mozillareleng/services',
                     },
                     'staging': {
                         'nix_path_attribute': 'deploy.staging',
+                        'docker_registry': 'index.docker.io',
+                        'docker_repo': 'mozillareleng/services',
                     },
                     'production': {
                         'nix_path_attribute': 'deploy.production',
+                        'docker_registry': 'index.docker.io',
+                        'docker_repo': 'mozillareleng/services',
                     },
                 },
             },
@@ -554,12 +584,78 @@ PROJECTS_CONFIG = {
                 'options': {
                     'testing': {
                         'nix_path_attribute': 'deploy.testing',
+                        'docker_registry': 'index.docker.io',
+                        'docker_repo': 'mozillareleng/services',
                     },
                     'staging': {
                         'nix_path_attribute': 'deploy.staging',
+                        'docker_registry': 'index.docker.io',
+                        'docker_repo': 'mozillareleng/services',
                     },
                     'production': {
                         'nix_path_attribute': 'deploy.production',
+                        'docker_registry': 'index.docker.io',
+                        'docker_repo': 'mozillareleng/services',
+                    },
+                },
+            },
+        ],
+    },
+    'uplift/frontend': {
+        'run': 'ELM',
+        'run_options': {
+            'port': 8010,
+            'envs': {
+                'bugzilla-url': 'https://bugzilla-dev.allizom.org',
+            }
+        },
+        'requires': [
+            'uplift/backend',
+        ],
+        'deploys': [
+            {
+                'target': 'S3',
+                'options': {
+                    'testing': {
+                        's3_bucket': 'release-services-uplift-frontend-testing',
+                        'url': 'https://uplift.testing.moz.tools',
+                        'dns': 'd1swet7sulei5z.cloudfront.net.',
+                        'envs': {
+                            'bugzilla-url': 'https://bugzilla.mozilla.org',
+                        },
+                        'csp': [
+                            'https://login.taskcluster.net',
+                            'https://auth.taskcluster.net',
+                            'https://bugzilla.mozilla.org',
+                        ],
+                    },
+                    'staging': {
+                        's3_bucket': 'release-services-uplift-frontend-staging',
+                        'url': 'https://uplift.staging.moz.tools',
+                        'dns': 'd3voyguhnvtgyb.cloudfront.net.',
+                        'envs': {
+                            'bugzilla-url': 'https://bugzilla.mozilla.org',
+                        },
+                        'csp': [
+                            'https://login.taskcluster.net',
+                            'https://auth.taskcluster.net',
+                            'https://bugzilla.mozilla.org',
+                            'https://uplift.shipit.staging.mozilla-releng.net',
+                        ],
+                    },
+                    'production': {
+                        's3_bucket': 'release-services-uplift-frontend-production',
+                        'url': 'https://uplift.moz.tools',
+                        'dns': 'd2j55he28msyhx.cloudfront.net.',
+                        'envs': {
+                            'bugzilla-url': 'https://bugzilla.mozilla.org',
+                        },
+                        'csp': [
+                            'https://login.taskcluster.net',
+                            'https://auth.taskcluster.net',
+                            'https://bugzilla.mozilla.org',
+                            'https://uplift.shipit.mozilla-releng.net',
+                        ],
                     },
                 },
             },
@@ -594,7 +690,7 @@ PROJECTS_CONFIG = {
             },
         ],
     },
-    'shipit-static-analysis': {
+    'staticanalysis/bot': {
         'checks': [
             ('Checking code quality', 'flake8'),
             ('Running tests', 'pytest tests/'),
@@ -605,18 +701,86 @@ PROJECTS_CONFIG = {
                 'options': {
                     'testing': {
                         'nix_path_attribute': 'deploy.testing',
+                        'docker_registry': 'index.docker.io',
+                        'docker_repo': 'mozillareleng/services',
                     },
                     'staging': {
                         'nix_path_attribute': 'deploy.staging',
+                        'docker_registry': 'index.docker.io',
+                        'docker_repo': 'mozillareleng/services',
                     },
                     'production': {
                         'nix_path_attribute': 'deploy.production',
+                        'docker_registry': 'index.docker.io',
+                        'docker_repo': 'mozillareleng/services',
                     },
                 },
             },
         ]
     },
-    'shipit-uplift': {
+    'staticanalysis/frontend': {
+        'run': 'NEUTRINO',
+        'run_options': {
+            'port': 8010,
+            'envs': {
+                'CONFIG': 'dev',
+            },
+        },
+        'requires': [],
+        'checks': [
+            ('Checking code quality', 'yarn lint'),
+            ('Running tests', 'yarn test'),
+        ],
+        'deploys': [
+            {
+                'target': 'S3',
+                'options': {
+
+                    'testing': {
+                        's3_bucket': 'release-services-staticanalysis-frontend-testing',
+                        'url': 'https://static-analysis.testing.moz.tools',
+                        'dns': 'd1blqs705aw8h9.cloudfront.net.',
+                        'envs': {
+                            # Use the same API as staging
+                            'CONFIG': 'staging',
+                        },
+                        'csp': [
+                            'https://index.taskcluster.net',
+                            'https://queue.taskcluster.net',
+                            'https://taskcluster-artifacts.net',
+                        ],
+                    },
+                    'staging': {
+                        's3_bucket': 'release-services-staticanalysis-frontend-staging',
+                        'url': 'https://static-analysis.staging.moz.tools',
+                        'dns': 'd21hzgxp28m0tc.cloudfront.net.',
+                        'envs': {
+                            'CONFIG': 'staging',
+                        },
+                        'csp': [
+                            'https://index.taskcluster.net',
+                            'https://queue.taskcluster.net',
+                            'https://taskcluster-artifacts.net',
+                        ],
+                    },
+                    'production': {
+                        's3_bucket': 'release-services-staticanalysis-frontend-production',
+                        'url': 'https://static-analysis.moz.tools',
+                        'dns': 'd2ezri92497z3m.cloudfront.net.',
+                        'envs': {
+                            'CONFIG': 'production',
+                        },
+                        'csp': [
+                            'https://index.taskcluster.net',
+                            'https://queue.taskcluster.net',
+                            'https://taskcluster-artifacts.net',
+                        ],
+                    },
+                },
+            },
+        ],
+    },
+    'uplift/backend': {
         'checks': [
             ('Checking code quality', 'flake8'),
             ('Running tests', 'pytest tests/'),
@@ -658,7 +822,7 @@ PROJECTS_CONFIG = {
             },
         ],
     },
-    'shipit-workflow': {
+    'shipit/api': {
         'checks': [
             ('Checking code quality', 'flake8'),
             ('Running tests', 'pytest tests/'),
@@ -671,23 +835,32 @@ PROJECTS_CONFIG = {
             'postgresql',
         ],
         'deploys': [
-            # {
-            #     'target': 'DOCKERHUB',
-            #     'options': {
-            #         'testing': {
-            #             'nix_path_attribute': 'dockerflow',
-            #         },
-            #         'staging': {
-            #             'nix_path_attribute': 'dockerflow',
-            #         },
-            #         'production': {
-            #             'nix_path_attribute': 'dockerflow',
-            #         },
-            #     },
-            # },
+            {
+                'target': 'DOCKERHUB',
+                'options': {
+                    'testing': {
+                        'url': 'https://api.shipit.testing.mozilla-releng.net',
+                        'nix_path_attribute': 'dockerflow',
+                        'docker_registry': 'index.docker.io',
+                        'docker_repo': 'mozilla/shipitbackend',
+                    },
+                    'staging': {
+                        'url': 'https://shipitbackend-default.dev.mozaws.net',
+                        'nix_path_attribute': 'dockerflow',
+                        'docker_registry': 'index.docker.io',
+                        'docker_repo': 'mozilla/shipitbackend',
+                    },
+                    'production': {
+                        'url': 'https://api.shipit.mozilla-releng.net',
+                        'nix_path_attribute': 'dockerflow',
+                        'docker_registry': 'index.docker.io',
+                        'docker_repo': 'mozilla/shipitbackend',
+                    },
+                },
+            },
         ],
     },
-    'shipit-frontend': {
+    'shipit/frontend': {
         'run': 'NEUTRINO',
         'run_options': {
             'port': 8010,
@@ -696,7 +869,7 @@ PROJECTS_CONFIG = {
             },
         },
         'requires': [
-            'shipit-workflow',
+            'shipit/api',
         ],
         'checks': [
             ('Checking code quality', 'yarn lint'),
@@ -706,7 +879,8 @@ PROJECTS_CONFIG = {
             {
                 'target': 'S3',
                 'options': {
-                    'testing': {
+                    # FIXME: temporarily disable staging, production, point testing to staging
+                    'staging': {
                         's3_bucket': 'shipit-testing-frontend',
                         'url': 'https://shipit.testing.mozilla-releng.net',
                         'dns': 'd2jpisuzgldax2.cloudfront.net.',
@@ -719,30 +893,30 @@ PROJECTS_CONFIG = {
                             'https://queue.taskcluster.net',
                         ],
                     },
-                    'staging': {
-                        's3_bucket': 'shipit-staging-frontend',
-                        'url': 'https://shipit.staging.mozilla-releng.net',
-                        'dns': 'd2ld4e8bl8yd1l.cloudfront.net.',
-                        'envs': {
-                            'CONFIG': 'staging',
-                        },
-                        'csp': [
-                            'https://hg.mozilla.org',
-                            'https://queue.taskcluster.net',
-                        ],
-                    },
-                    'production': {
-                        's3_bucket': 'shipit-production-frontend',
-                        'url': 'https://shipit.mozilla-releng.net',
-                        'dns': 'dve8yd1431ifz.cloudfront.net.',
-                        'envs': {
-                            'CONFIG': 'production',
-                        },
-                        'csp': [
-                            'https://hg.mozilla.org',
-                            'https://queue.taskcluster.net',
-                        ],
-                    },
+                    # 'staging': {
+                    #     's3_bucket': 'shipit-staging-frontend',
+                    #     'url': 'https://shipit.staging.mozilla-releng.net',
+                    #     'dns': 'd2ld4e8bl8yd1l.cloudfront.net.',
+                    #     'envs': {
+                    #         'CONFIG': 'staging',
+                    #     },
+                    #     'csp': [
+                    #         'https://hg.mozilla.org',
+                    #         'https://queue.taskcluster.net',
+                    #     ],
+                    # },
+                    # 'production': {
+                    #     's3_bucket': 'shipit-production-frontend',
+                    #     'url': 'https://shipit.mozilla-releng.net',
+                    #     'dns': 'dve8yd1431ifz.cloudfront.net.',
+                    #     'envs': {
+                    #         'CONFIG': 'production',
+                    #     },
+                    #     'csp': [
+                    #         'https://hg.mozilla.org',
+                    #         'https://queue.taskcluster.net',
+                    #     ],
+                    # },
                 },
             },
         ],

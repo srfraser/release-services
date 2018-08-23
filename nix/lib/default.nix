@@ -404,6 +404,7 @@ in rec {
     { src
     , src_path ? null
     , csp ? "default-src 'none'; img-src 'self' data:; script-src 'self'; style-src 'self'; font-src 'self';"
+    , extraBuildInputs ? []
     , patchPhase ? ""
     , postInstall ? ""
     , shellHook ? ""
@@ -418,6 +419,8 @@ in rec {
         inherit src;
 
         doCheck = true;
+
+        extraBuildInputs = extraBuildInputs;
 
         checkPhase = ''
           yarn lint
@@ -471,6 +474,7 @@ in rec {
             set -e
             export SSL_CERT_FILE="${cacert}/etc/ssl/certs/ca-bundle.crt"
             pushd "$SERVICES_ROOT"${self.src_path} >> /dev/null
+            rm -rf ./node_modules
             ${releng_pkgs.pkgs.yarn}/bin/yarn upgrade
             popd
           '';
@@ -648,6 +652,7 @@ in rec {
     , version
     , src
     , python
+    , src_path ? null
     , buildInputs ? []
     , propagatedBuildInputs ? []
     , doCheck ? true
@@ -777,6 +782,7 @@ in rec {
     , version
     , src
     , python
+    , src_path ? null
     , buildInputs ? []
     , propagatedBuildInputs ? []
     , doCheck ? true
@@ -959,10 +965,13 @@ in rec {
           inherit python;
 
           src_path =
-            "src/" +
-              (replaceStrings ["-"] ["_"]
-                (builtins.substring 8
-                  (builtins.stringLength name - 8) name));
+            if src_path != null
+              then src_path
+              else
+                "src/" +
+                  (replaceStrings ["-"] ["_"]
+                    (builtins.substring 8
+                      (builtins.stringLength name - 8) name));
 
           taskclusterGithubTasks =
             map (branch: mkTaskclusterGithubTask { inherit name branch; inherit (self) src_path; })
