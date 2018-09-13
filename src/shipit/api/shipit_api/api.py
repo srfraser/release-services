@@ -12,27 +12,33 @@ import taskcluster
 from sqlalchemy.orm.exc import NoResultFound
 from werkzeug.exceptions import BadRequest
 
+from backend_common.auth import auth
 from backend_common.auth0 import mozilla_accept_token
 from cli_common.log import get_logger
+from shipit_api.config import SCOPE_PREFIX
 from shipit_api.models import Phase
 from shipit_api.models import Release
+from shipit_api.tasks import ActionsJsonNotFound
 from shipit_api.tasks import UnsupportedFlavor
 from shipit_api.tasks import fetch_actions_json
-from shipit_api.tasks import generate_action_task
-from shipit_api.tasks import render_action_task
+from shipit_api.tasks import generate_action_hook
 
 log = get_logger(__name__)
+_tc_params = {
+    'credentials': {
+        'clientId': os.environ.get('TASKCLUSTER_CLIENT_ID'),
+        'accessToken': os.environ.get('TASKCLUSTER_ACCESS_TOKEN')
+    },
+    'maxRetries': 12,
+}
 
 
 def _queue():
-    queue = taskcluster.Queue({
-        'credentials': {
-            'clientId': os.environ.get('TASKCLUSTER_CLIENT_ID'),
-            'accessToken': os.environ.get('TASKCLUSTER_ACCESS_TOKEN')
-        },
-        'maxRetries': 12
-    })
-    return queue
+    return taskcluster.Queue(_tc_params)
+
+
+def _hooks():
+    return taskcluster.Hooks(_tc_params)
 
 
 def validate_user(key, checker):
@@ -59,7 +65,7 @@ def validate_user(key, checker):
 
 @mozilla_accept_token()
 @validate_user(key='https://sso.mozilla.com/claim/groups',
-               checker=lambda xs: 'releng' in xs)
+               checker=lambda xs: 'vpn_cloudops_shipit' in xs)
 def add_release(body):
     session = flask.g.db.session
     r = Release(
@@ -126,7 +132,7 @@ def get_phase(name, phase):
 
 @mozilla_accept_token()
 @validate_user(key='https://sso.mozilla.com/claim/groups',
-               checker=lambda xs: 'releng' in xs)
+               checker=lambda xs: 'vpn_cloudops_shipit' in xs)
 def schedule_phase(name, phase):
     session = flask.g.db.session
     try:
@@ -152,37 +158,61 @@ def schedule_phase(name, phase):
 
 @mozilla_accept_token()
 @validate_user(key='https://sso.mozilla.com/claim/groups',
-               checker=lambda xs: 'releng' in xs)
+               checker=lambda xs: 'vpn_cloudops_shipit' in xs)
 def abandon_release(name):
     session = flask.g.db.session
     try:
         release = session.query(Release).filter(Release.name == name).one()
         # Cancel all submitted task groups first
         for phase in filter(lambda x: x.submitted, release.phases):
-            actions = fetch_actions_json(phase.task_id)
-            action_task_id, action_task, context = generate_action_task(
+            try:
+                actions = fetch_actions_json(phase.task_id)
+            except ActionsJsonNotFound:
+                log.info('Ignoring not completed action task %s', phase.task_id)
+                continue
+
+            hook = generate_action_hook(
                 decision_task_id=phase.task_id,
                 action_name='cancel-all',
-                action_task_input={},
                 actions=actions,
             )
             # some parameters contain a lot of entries, so we hit the payload
             # size limit. We don't use this parameter in any case, safe to
             # remove
             for long_param in ('existing_tasks', 'release_history', 'release_partner_config'):
-                del context['parameters'][long_param]
-            # ACTION_TASK_ID should be explicitly specified and be the original
-            # action task that generated this phase.
-            action_task = render_action_task(task=action_task, context=context,
-                                             action_task_id=phase.task_id)
-            # Add the initial action task to the list of dependencies to
-            # prevent early firing
-            action_task['dependencies'].append(phase.task_id)
-            log.info('Cancel phase %s by task %s', phase.name, action_task_id)
-            _queue().createTask(action_task_id, action_task)
+                del hook['context']['parameters'][long_param]
+            log.info('Cancel phase %s by hook %s', phase.name, hook)
+            res = _hooks().triggerHook(hook['hook_group_id'], hook['hook_id'], hook['hook_payload'])
+            log.debug('Done: %s', res)
 
         release.status = 'aborted'
         session.commit()
         return release.json
     except NoResultFound:
         flask.abort(404)
+
+
+@auth.require_scopes([SCOPE_PREFIX + '/sync_releases'])
+def sync_releases(releases):
+    session = flask.g.db.session
+    for release in releases:
+        try:
+            session.query(Release).filter(Release.name == release['name']).one()
+            # nothing todo
+        except NoResultFound:
+            status = 'shipped'
+            if not release['shippedAt']:
+                status = 'aborted'
+            r = Release(
+                product=release['product'],
+                version=release['version'],
+                branch=release['branch'],
+                revision=release['mozillaRevision'],
+                build_number=release['buildNumber'],
+                release_eta=release.get('release_eta'),
+                partial_updates=release.get('partials'),
+                status=status,
+            )
+            session.add(r)
+            session.commit()
+    return flask.jsonify({'ok': 'ok'})

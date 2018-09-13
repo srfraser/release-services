@@ -15,6 +15,16 @@ import abc
 CLANG_TIDY = 'clang-tidy'
 CLANG_FORMAT = 'clang-format'
 MOZLINT = 'mozlint'
+INFER = 'infer'
+
+
+class AnalysisException(Exception):
+    '''
+    Custom exception used in controlled errors
+    '''
+    def __init__(self, code, message):
+        self.code = code
+        super().__init__(message)
 
 
 class Issue(abc.ABC):

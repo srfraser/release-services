@@ -3,6 +3,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 import os.path
+from unittest.mock import MagicMock
 
 import responses
 from parsepatch.patch import Patch
@@ -28,14 +29,9 @@ def test_phabricator(mock_phabricator, mock_repository, mock_config):
     Test a phabricator revision
     '''
     from static_analysis_bot.revisions import PhabricatorRevision
-    from static_analysis_bot.report.phabricator import PhabricatorReporter
 
-    api = PhabricatorReporter({
-        'url': 'http://phabricator.test/api/',
-        'api_key': 'deadbeef',
-    })
-
-    r = PhabricatorRevision('PHID-DIFF-testABcd12', api)
+    with mock_phabricator as api:
+        r = PhabricatorRevision('PHID-DIFF-testABcd12', api)
     assert not hasattr(r, 'mercurial')
     assert r.diff_id == 42
     assert r.diff_phid == 'PHID-DIFF-testABcd12'
@@ -48,8 +44,12 @@ def test_phabricator(mock_phabricator, mock_repository, mock_config):
     assert open(test_txt).read() == 'Hello World\n'
 
     # Load full patch
+    # Mock the mercurial repo update as we use a dummy revision
     assert r.patch is None
+    __update = mock_repository.update
+    mock_repository.update = MagicMock(return_value=True)
     r.load(mock_repository)
+    mock_repository.update = __update
     assert r.patch is not None
     assert isinstance(r.patch, str)
     assert len(r.patch.split('\n')) == 7

@@ -55,6 +55,10 @@ class UnsupportedFlavor(Exception):
         self.description = description
 
 
+class ActionsJsonNotFound(Exception):
+    pass
+
+
 def get_trust_domain(project):
     if 'comm' in project:
         return 'comm'
@@ -70,11 +74,16 @@ def find_decision_task_id(project, revision):
 
 
 def fetch_actions_json(task_id):
-    queue = taskcluster.Queue()
-    actions_url = queue.buildUrl('getLatestArtifact', task_id, 'public/actions.json')
-    q = requests.get(actions_url)
-    q.raise_for_status()
-    return q.json()
+    try:
+        queue = taskcluster.Queue()
+        actions_url = queue.buildUrl('getLatestArtifact', task_id, 'public/actions.json')
+        q = requests.get(actions_url)
+        q.raise_for_status()
+        return q.json()
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 404:
+            raise ActionsJsonNotFound
+        raise
 
 
 def find_action(name, actions):
@@ -118,3 +127,21 @@ def generate_action_task(decision_task_id, action_name, action_task_input, actio
 def render_action_task(task, context, action_task_id):
     action_task = jsone.render(task, context)
     return action_task
+
+
+def generate_action_hook(decision_task_id, action_name, actions):
+    target_action = find_action(action_name, actions)
+    context = copy.deepcopy(actions['variables'])  # parameters
+    context.update({
+        'input': {},
+        'taskGroupId': decision_task_id,
+        'taskId': None,
+        'task': None,
+    })
+    hook_payload = jsone.render(target_action['hookPayload'], context)
+    return dict(
+        hook_group_id=target_action['hookGroupId'],
+        hook_id=target_action['hookId'],
+        hook_payload=hook_payload,
+        context=context,
+    )

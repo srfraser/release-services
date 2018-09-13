@@ -17,6 +17,7 @@ from cli_common.log import get_logger
 PROJECT_NAME = 'static-analysis-bot'
 CONFIG_URL = 'https://hg.mozilla.org/mozilla-central/raw-file/tip/tools/clang-tidy/config.yaml'
 REPO_CENTRAL = b'https://hg.mozilla.org/mozilla-central'
+REPO_UNIFIED = b'https://hg.mozilla.org/mozilla-unified'
 REPO_REVIEW = b'https://reviewboard-hg.mozilla.org/gecko'
 ARTIFACT_URL = 'https://queue.taskcluster.net/v1/task/{task_id}/runs/{run_id}/artifacts/public/results/{diff_name}'
 
@@ -50,6 +51,7 @@ class Settings(object):
         self.app_channel = app_channel
         self.download({
             'cpp_extensions': frozenset(['.c', '.h', '.cpp', '.cc', '.cxx', '.hh', '.hpp', '.hxx', '.m', '.mm']),
+            'java_extensions': frozenset(['.java']),
         })
         assert 'clang_checkers' in self.config
         assert 'target' in self.config
@@ -62,8 +64,8 @@ class Settings(object):
 
         assert os.path.isdir(cache_root)
         self.cache_root = cache_root
-        self.repo_dir = os.path.join(self.cache_root, 'sa-central')
-        self.repo_shared_dir = os.path.join(self.cache_root, 'sa-central-shared')
+        self.repo_dir = os.path.join(self.cache_root, 'sa-unified')
+        self.repo_shared_dir = os.path.join(self.cache_root, 'sa-unified-shared')
 
         if 'TASK_ID' in os.environ and 'RUN_ID' in os.environ:
             self.taskcluster_results_dir = '/tmp/results'
@@ -97,6 +99,7 @@ class Settings(object):
         '''
         Is this check publishable ?
         Support the wildcard expansion
+        Publication is enabled by default, even when missing
         '''
         if check is None:
             return False
@@ -106,11 +109,11 @@ class Settings(object):
 
             if name.endswith('*') and check.startswith(name[:-1]):
                 # Wildcard at end of check name
-                return c['publish']
+                return c.get('publish', True)
 
             elif name == check:
                 # Same exact check name
-                return c['publish']
+                return c.get('publish', True)
 
         return False
 
