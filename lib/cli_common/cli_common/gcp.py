@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from google.cloud import storage as gcp_storage
+from google.cloud import logging as gcp_logging
 from google.oauth2.service_account import Credentials
 
 
@@ -21,3 +22,11 @@ def get_bucket(service_account):
     client = gcp_storage.Client(project=creds.project_id, credentials=creds)
 
     return client.get_bucket(bucket)
+
+
+def get_logger(log_name):
+    '''Create a Stackdriver logging client.'''
+
+    client = gcp_logging.Client()
+    logger = client.logger(log_name)
+    return logger
